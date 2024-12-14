@@ -127,7 +127,7 @@ k3sup install \
   --tls-san $vip \
   --cluster \
   --k3s-version $k3sVersion \
-  --k3s-extra-args "--disable traefik --disable servicelb --flannel-iface=$interface --node-ip=$master1 --node-taint node-role.kubernetes.io/master=true:NoSchedule" \
+  --k3s-extra-args "--disable traefik --disable servicelb --flannel-iface=$interface --node-ip=$k3s-s1 --node-taint node-role.kubernetes.io/master=true:NoSchedule" \
   --merge \
   --sudo \
   --local-path $HOME/.kube/config \
