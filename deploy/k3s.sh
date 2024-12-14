@@ -122,7 +122,7 @@ done
 # Шаг 1: Bootstrap Первый узел k3s
 mkdir ~/.kube
 k3sup install \
-  --ip $master1 \
+  --ip $k3s-s1 \
   --user $user \
   --tls-san $vip \
   --cluster \
