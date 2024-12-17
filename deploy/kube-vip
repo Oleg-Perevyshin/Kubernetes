@@ -4,6 +4,7 @@ metadata:
   creationTimestamp: null
   labels:
     app.kubernetes.io/name: kube-vip-ds
+    app.kubernetes.io/version: v0.8.7
   name: kube-vip-ds
   namespace: kube-system
 spec:
@@ -15,11 +16,15 @@ spec:
       creationTimestamp: null
       labels:
         app.kubernetes.io/name: kube-vip-ds
+        app.kubernetes.io/version: v0.8.7
     spec:
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/master
+                operator: Exists
             - matchExpressions:
               - key: node-role.kubernetes.io/control-plane
                 operator: Exists
