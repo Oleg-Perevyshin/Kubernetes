@@ -2,7 +2,7 @@
 set -e  # Прекращение выполнения при любой ошибке
 
 # Kube VIP
-kvip_ver="v0.8.7"
+KVVERSION="v0.8.7"
 vip="192.168.5.20"
 kube_vip_url="https://raw.githubusercontent.com/Oleg-Perevyshin/Kubernetes/refs/heads/main/deploy/kube-vip"
 
@@ -143,7 +143,7 @@ kube_vip_dest="/var/lib/rancher/rke2/server/manifests/kube-vip.yaml"
 # Загружаем файл и производим замену переменных
 echo -e "\033[32m  Загружаем файл $kube_vip_url и производим замену переменных\033[0m"
 curl -s "$kube_vip_url" | \
-sed 's/$interface/'"$interface"'/g; s/$vip/'"$vip"'/g; s/\$kvip_ver/'"$kvip_ver"'/g' | \
+sed 's/$interface/'"$interface"'/g; s/$vip/'"$vip"'/g; s/\$KVVERSION/'"$KVVERSION"'/g' | \
 sudo tee "$HOME/kube-vip.yaml" > /dev/null || {
   echo -e "\033[31m  Ошибка при загрузке kube-vip, установка прервана\033[0m"; exit 1;
 }
