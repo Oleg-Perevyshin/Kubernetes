@@ -259,16 +259,16 @@ ssh -q -t -i "$HOME/.ssh/$certName" "$user@$rke2s1" sudo su <<EOF
   mkdir -p /var/lib/rancher/rke2/server/manifests
   mkdir -p /etc/rancher/rke2
 
-  # Копирование файлов (удалить в конце)
-  cp "/home/$user/kube-vip.yaml" "/var/lib/rancher/rke2/server/manifests/kube-vip.yaml" && {
-    echo -e "\033[32m  Файл /home/$user/kube-vip.yaml скопирован\033[0m"
+  # Перемещение файлов
+  mv "/home/$user/kube-vip.yaml" "/var/lib/rancher/rke2/server/manifests/kube-vip.yaml" && {
+    echo -e "\033[32m  Файл /home/$user/kube-vip.yaml перемещен\033[0m"
   } || {
-    echo -e "\033[31m  Ошибка копирования /home/$user/kube-vip.yaml\033[0m"; exit 1;
+    echo -e "\033[31m  Ошибка перемещения /home/$user/kube-vip.yaml\033[0m"; exit 1;
   }
-  cp "/home/$user/config.yaml" "/etc/rancher/rke2/config.yaml" && {
-    echo -e "\033[32m  Файл /home/$user/config.yaml скопирован\033[0m"
+  mv "/home/$user/config.yaml" "/etc/rancher/rke2/config.yaml" && {
+    echo -e "\033[32m  Файл /home/$user/config.yaml перемещен\033[0m"
   } || {
-    echo -e "\033[31m  Ошибка копирования /home/$user/config.yaml\033[0m"; exit 1;
+    echo -e "\033[31m  Ошибка перемещения /home/$user/config.yaml\033[0m"; exit 1;
   }
 
   # Обновляем пути
@@ -304,7 +304,7 @@ echo -e "\033[32m  Конфигурация успешно скопирован�
 config_file="$HOME/.kube/config"
 
 # Обновляем конфигурацию и заменяем IP-адрес
-sudo sed "s/127.0.0.1/$rke2s1/g" ~/.kube/rke2.yaml > "$config_file"
+sudo sed "s/127.0.0.1/$rke2s1/g" "$HOME/.kube/rke2.yaml" > "$config_file"
 
 # Устанавливаем владельца файла конфигурации
 sudo chown "$(id -u):$(id -g)" "$config_file"
@@ -360,7 +360,9 @@ for newnode in "${allserversnorke2s1[@]}"; do
 
     # Создаем директории и файл конфигурации
     mkdir -p /etc/rancher/rke2
-    touch /etc/rancher/rke2/config.yaml
+
+    # Удаляем файл, если он существует
+    rm -f /etc/rancher/rke2/config.yaml
     
     # Записываем токен и адрес сервера в конфигурацию
     echo "token: $token" >> /etc/rancher/rke2/config.yaml
@@ -400,7 +402,9 @@ for newnode in "${allagents[@]}"; do
 
     # Создаем директории и файл конфигурации
     mkdir -p /etc/rancher/rke2
-    touch /etc/rancher/rke2/config.yaml
+
+    # Удаляем файл, если он существует
+    rm -f /etc/rancher/rke2/config.yaml
 
     # Записываем токен и адрес сервера в конфигурацию
     echo "token: $token" >> /etc/rancher/rke2/config.yaml
