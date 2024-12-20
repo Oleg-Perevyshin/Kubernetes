@@ -440,6 +440,57 @@ EOF
   echo -e "\033[32m------------------------------------------------------------------------------------------\033[0m"
 done
 
+# Устанавливаем Open-ISCSI (необходимо для Debian и не облачного Ubuntu)
+echo -e "\033[32m  Проверяем установку Open-ISCSI...\033[0m"
+if command -v iscsiadm &> /dev/null; then
+  echo -e "\033[32m  Open-ISCSI уже установлен\033[0m"
+else
+  echo -e "\033[31m  Open-ISCSI не найден, устанавливаем...\033[0m"
+  sudo apt install open-iscsi -y || {
+    echo -e "\033[31m  Ошибка при установке Open-ISCSI\033[0m"; exit 1;
+  }
+fi
+
+echo -e "\033[32m  Подключаем агенты хранилищ для Longhorn в кластер RKE2\033[0m"
+for newnode in "${arraystorageagents[@]}"; do
+  ssh -q -t -i "$HOME/.ssh/$certName" "$user@$newnode" sudo su <<EOF
+    # Синхронизация времени
+    echo -e "\033[32m  Синхронизация времени на агенте $newnode\033[0m"
+    timedatectl set-ntp off || {
+      echo -e "\033[31m    Ошибка при отключении NTP, установка прервана\033[0m"; exit 1;
+    }
+    timedatectl set-ntp on || {
+      echo -e "\033[31m    Ошибка при включении NTP, установка прервана\033[0m"; exit 1;
+    }
+    echo -e "\033[32m  Синхронизация времени выполнена\033[0m"
+
+    # Создаем директории и файл конфигурации
+    mkdir -p /etc/rancher/rke2
+
+    # Удаляем файл, если он существует
+    rm -f /etc/rancher/rke2/config.yaml
+
+    # Записываем токен и адрес сервера в конфигурацию
+    echo "token: $token" >> /etc/rancher/rke2/config.yaml
+    echo "server: https://$vip:9345" >> /etc/rancher/rke2/config.yaml
+    echo "node-label:" >> /etc/rancher/rke2/config.yaml
+    echo "  - longhorn=true" >> /etc/rancher/rke2/config.yaml
+
+    # Устанавливаем RKE2
+    curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="agent" sh - && echo -e "\033[32m  RKE2 успешно установлен\033[0m" || {
+      echo -e "\033[31m  Ошибка при установке RKE2\033[0m"; exit 1;
+    }
+
+    # Включаем и запускаем службы RKE2
+    systemctl enable rke2-agent.service
+    systemctl start rke2-agent.service
+
+    exit
+EOF
+  echo -e "\033[32m  Агент $newnode успешно присоединился\033[0m"
+  echo -e "\033[32m------------------------------------------------------------------------------------------\033[0m"
+done
+
 
 ####################################################################################################################
 ####################################################################################################################
@@ -610,12 +661,19 @@ helm repo update || {
   echo -e "\033[31m  Ошибка при обновлении репозиториев Helm\033[0m"; exit 1;
 }
 
-helm install cert-manager jetstack/cert-manager \
-  --namespace cert-manager \
-  --create-namespace \
-  --version v1.16.2 || {
-    echo -e "\033[31m  Ошибка при установке Cert-Manager\033[0m"; exit 1;
-}
+# Проверяем, установлен ли Cert-Manager
+echo -e "\033[32m  Проверяем Cert-Manager\033[0m"
+if helm list --namespace cert-manager | grep -q cert-manager; then
+  echo -e "\033[32m  Cert-Manager уже установлен\033[0m"
+else
+  echo -e "\033[32m  Устанавливаем Cert-Manager...\033[0m"
+  helm install cert-manager jetstack/cert-manager \
+    --namespace cert-manager \
+    --create-namespace \
+    --version v1.16.2 || {
+      echo -e "\033[31m  Ошибка при установке Cert-Manager\033[0m"; exit 1;
+  }
+fi
 
 # Ожидаем готовности Cert-Manager
 echo -e "\033[32m  Ожидаем готовности Cert-Manager...\033[0m"
@@ -672,69 +730,23 @@ echo -e "\033[32m---------------------------------------------------------------
 ####################################################################################################################
 ####################################################################################################################
 ####################################################################################################################
-echo -e "\033[32m------------------------------------------------------------------------------------------\033[0m"
-echo -e "\033[32mЭтап 7: Установка Longhorn\033[0m"
+# echo -e "\033[32m------------------------------------------------------------------------------------------\033[0m"
+# echo -e "\033[32mЭтап 7: Установка Longhorn\033[0m"
 ####################################################################################################################
-# Устанавливаем Open-ISCSI (необходимо для Debian и не облачного Ubuntu)
-command -v sudo service open-iscsi status &> /dev/null || {
-  echo -e " \033[31m  Open-ISCSI не найден, установливаем...\033[0m"
-  sudo apt install open-iscsi || {
-    echo -e " \033[31m  Ошибка при установке Open-ISCSI\033[0m"; exit 1;
-  }
-}
+# # Установливаем Longhorn (используя измененный официальный файл для привязки к узлам Longhorn)
+# kubectl apply -f https://raw.githubusercontent.com/Oleg-Perevyshin/Kubernetes/refs/heads/main/longhorn.yaml || {
+#   echo -e "\033[31m  Ошибка при применении longhorn.yaml\033[0m"; exit 1;
+# }
 
-echo -e "\033[32m  Подключаем агенты хранилищ Longhorn в кластер RKE2\033[0m"
-token=$(<token)
-for newnode in "${arraystorageagents[@]}"; do
-  ssh -q -t -i "$HOME/.ssh/$certName" "$user@$newnode" sudo su <<EOF
-    # Синхронизация времени
-    echo -e "\033[32m  Синхронизация времени на агенте $newnode\033[0m"
-    timedatectl set-ntp off || {
-      echo -e "\033[31m    Ошибка при отключении NTP, установка прервана\033[0m"; exit 1;
-    }
-    timedatectl set-ntp on || {
-      echo -e "\033[31m    Ошибка при включении NTP, установка прервана\033[0m"; exit 1;
-    }
-    echo -e "\033[32m  Синхронизация времени выполнена\033[0m"
+# # Следим за состоянием подов в пространстве имен longhorn-system
+# echo -e "\033[32m  Следим за состоянием подов Longhorn:\033[0m"
+# kubectl get pods --namespace longhorn-system --watch
 
-    # Создаем директории и файл конфигурации
-    mkdir -p /etc/rancher/rke2
-
-    # Удаляем файл, если он существует
-    rm -f /etc/rancher/rke2/config.yaml
-
-    # Записываем токен и адрес сервера в конфигурацию
-    echo "token: $token" >> /etc/rancher/rke2/config.yaml
-    echo "server: https://$vip:9345" >> /etc/rancher/rke2/config.yaml
-    echo "node-label:" >> /etc/rancher/rke2/config.yaml
-    echo "  - longhorn=true" >> /etc/rancher/rke2/config.yaml
-
-    # Устанавливаем RKE2
-    curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="agent" sh - && echo -e "\033[32m  RKE2 успешно установлен\033[0m" || {
-      echo -e "\033[31m  Ошибка при установке RKE2\033[0m"; exit 1;
-    }
-
-    # Включаем и запускаем службы RKE2
-    systemctl enable rke2-agent.service
-    systemctl start rke2-agent.service
-
-    exit
-EOF
-  echo -e "\033[32m  Агент $newnode успешно присоединился\033[0m"
-  echo -e "\033[32m------------------------------------------------------------------------------------------\033[0m"
-done
-
-# Установливаем Longhorn (используя измененный официальный файл для привязки к узлам Longhorn)
-kubectl apply -f https://raw.githubusercontent.com/JamesTurland/JimsGarage/main/Kubernetes/Longhorn/longhorn.yaml
-
-# Следим за состоянием подов в пространстве имен longhorn-system
-kubectl get pods --namespace longhorn-system --watch
-
-# Проверяем состояние узлов
-echo -e "\033[32m  Состояние узлов:\033[0m"
-kubectl get nodes
-echo -e "\033[32m  Службы Longhorn в пространстве имен longhorn-system:\033[0m"
-kubectl get svc -n longhorn-system
-echo -e "\033[32m------------------------------------------------------------------------------------------\033[0m"
-echo -e "\033[32mLonghorn установлен и готов к работе!\033[0m"
-echo -e "\033[32m------------------------------------------------------------------------------------------\033[0m"
+# # Проверяем состояние узлов
+# echo -e "\033[32m  Состояние узлов:\033[0m"
+# kubectl get nodes
+# echo -e "\033[32m  Службы Longhorn:\033[0m"
+# kubectl get svc -n longhorn-system
+# echo -e "\033[32m------------------------------------------------------------------------------------------\033[0m"
+# echo -e "\033[32mLonghorn установлен и готов к работе!\033[0m"
+# echo -e "\033[32m------------------------------------------------------------------------------------------\033[0m"
