@@ -1,0 +1,5 @@
+{
+  "yaml.schemas": {
+    "https://json.schemastore.org/projektor.json": "file:///Users/poe/Work/Projects/Kubernetes/longhorn.yaml"
+  }
+}
