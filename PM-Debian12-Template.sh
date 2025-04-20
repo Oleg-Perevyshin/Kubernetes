@@ -13,7 +13,7 @@ fi
 VMID=9001
 RAM=2048
 CORES=1
-DISK=5G
+DISK=10G
 CPU=host
 IMAGE_URL="https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
 IMAGE="debian-12-generic-amd64+docker.qcow2"
