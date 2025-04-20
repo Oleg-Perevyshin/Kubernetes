@@ -119,7 +119,7 @@ runcmd:
 EOF
 
     qm set "$VMID" --cicustom "vendor=local:snippets/debian-docker.yaml"
-    qm set "$VMID" --tags cloudinit,docker,template
+    qm set "$VMID" --tags template
     qm set "$VMID" --ciuser "$REAL_USER"
     
     if [ -n "$SSH_KEY_PATH" ]; then
