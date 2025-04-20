@@ -66,7 +66,7 @@ prepare_image() {
 
 create_vm() {
     echo "Создание структуры виртуальной машины"
-    qm create "$VMID" --name "Debian-12 (Docker)" --ostype l26 \
+    qm create "$VMID" --name "Debian-12-Docker" --ostype l26 \
         --memory "$RAM" --balloon 0 \
         --agent 1 \
         --bios ovmf --machine q35 --efidisk0 "$STORAGE:0,pre-enrolled-keys=0" \
