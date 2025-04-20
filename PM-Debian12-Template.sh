@@ -104,7 +104,7 @@ runcmd:
 EOF
 
 qm set "$VMID" --cicustom "vendor=local:snippets/debian-docker.yaml"
-qm set "$VMID" --tags template
+qm set "$VMID" --tags Template
 qm set "$VMID" --ciuser "$REAL_USER"
 if [ -n "$SSH_KEY_PATH" ]; then
     qm set "$VMID" --sshkeys "$SSH_KEY_PATH"
