@@ -9,7 +9,7 @@ if [ "$(id -u)" != "0" ]; then
 fi
 
 # Configuration
-VMID=9000
+VMID=9001
 RAM=2048
 CORES=1
 DISK=5G
@@ -28,7 +28,7 @@ detect_storage() {
 }
 
 STORAGE=$(detect_storage)
-echo "Using storage: $STORAGE"
+echo "Использование хранилища: $STORAGE"
 
 if [ -n "$SUDO_USER" ]; then
     REAL_USER="$SUDO_USER"
@@ -58,15 +58,15 @@ echo "Создание шаблона виртуальной машины для
 echo "Путь к ключу SSH: $SSH_KEY_PATH"
 
 prepare_image() {
-    echo "Загрузка и подготовка образа..."
+    echo "Загрузка и подготовка образа"
     wget -q "$IMAGE_URL" -O "$IMAGE"
     qemu-img resize "$IMAGE" "$DISK"
     qm destroy "$VMID" &>/dev/null || true
 }
 
 create_vm() {
-    echo "Creating VM structure..."
-    qm create "$VMID" --name "debian-bookworm" --ostype l26 \
+    echo "Создание структуры виртуальной машины"
+    qm create "$VMID" --name "Debian-12 (Docker)" --ostype l26 \
         --memory "$RAM" --balloon 0 \
         --agent 1 \
         --bios ovmf --machine q35 --efidisk0 "$STORAGE:0,pre-enrolled-keys=0" \
@@ -110,9 +110,9 @@ runcmd:
     - chmod a+r /etc/apt/keyrings/docker.gpg
     - echo "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
     - apt-get update
-    - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-    - usermod -aG docker ${user}
-    - timedatectl set-timezone Europe/Moscow
+    - apt-get install -y sudo docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    - usermod -aG sudo ${user}
+    - timedatectl set-timezone Europe/Minsk
     - systemctl enable qemu-guest-agent
     - systemctl start qemu-guest-agent
     - reboot
