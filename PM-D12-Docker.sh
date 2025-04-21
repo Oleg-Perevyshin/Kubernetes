@@ -3,40 +3,38 @@
 set -e
 set -o pipefail
 
-# Check root privileges
+# Цвета для вывода (NC устанавливать после выводимого текста)
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+# Проверка прав root
 if [ "$(id -u)" != "0" ]; then
-    echo "Скрипт должен быть запущен от имени пользователя root" >&2
-    exit 1
+    echo -e "${RED}Скрипт должен быть запущен от имени пользователя root${NC}" >&2; exit 1
 fi
 
-# Configuration
+# Конфигурация
 VMID=9001
-RAM=2048
-CORES=1
-DISK=10G
-CPU=host
 IMAGE_URL="https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
 IMAGE="debian-12-generic-amd64+docker.qcow2"
 
-detect_storage() {
-    if pvesm status | grep -q "local-zfs"; then
-        echo "local-zfs"
-    elif pvesm status | grep -q "local-lvm"; then
-        echo "local-lvm"
-    else
-        echo "local"
-    fi
-}
+# Определение типа хранилища
+if pvesm status | grep -q "local-zfs"; then
+    STORAGE="local-zfs"
+elif pvesm status | grep -q "local-lvm"; then
+    STORAGE="local-lvm"
+else
+    STORAGE="local"
+fi
 
-STORAGE=$(detect_storage)
-echo "Использование хранилища: $STORAGE"
+echo -e "${GREEN}Использование хранилища: $STORAGE${NC}"
 
 REAL_USER=$(who am i | awk '{print $1}')
 if [ -z "$REAL_USER" ] || [ "$REAL_USER" = "root" ]; then
     read -p "Введите имя пользователя для шаблона: " REAL_USER
     if [ -z "$REAL_USER" ]; then
-        echo "Имя пользователя не указано, установка прервана"
-        exit 1
+        echo -e "${RED}Имя пользователя не указано, установка прервана${NC}"; exit 1
     fi
 fi
 
@@ -47,23 +45,23 @@ elif [ -f "/root/.ssh/authorized_keys" ]; then
     SSH_KEY_PATH="/root/.ssh/authorized_keys"
 fi
 
-echo "Создание шаблона виртуальной машины для пользователя: $REAL_USER"
-echo "Путь к ключу SSH: $SSH_KEY_PATH"
+echo -e "${GREEN}Создание шаблона виртуальной машины для пользователя: $REAL_USER${NC}"
+echo -e "${GREEN}Путь к ключу SSH: $SSH_KEY_PATH${NC}"
 
 if [ ! -f "$IMAGE" ]; then
-    echo "Загрузка и подготовка образа"
+    echo -e "${YELLOW}Загрузка и подготовка образа...${NC}"
     wget -q "$IMAGE_URL" -O "$IMAGE"
 fi
 
-qemu-img resize "$IMAGE" "$DISK"
+qemu-img resize "$IMAGE" 10G
 qm destroy "$VMID" &>/dev/null || true
 
-echo "Создание структуры виртуальной машины"
+echo -e "${GREEN}Создание структуры виртуальной машины...${NC}"
 qm create "$VMID" --name "Debian-12-Docker" --ostype l26 \
-    --memory "$RAM" --balloon 0 \
+    --memory 2048 --balloon 0 \
     --agent 1 \
     --bios ovmf --machine q35 --efidisk0 "$STORAGE:0,pre-enrolled-keys=0" \
-    --cpu "$CPU" --cores "$CORES" --numa 1 \
+    --cpu host --cores 1 --numa 1 \
     --vga serial0 --serial0 socket \
     --net0 virtio,bridge=vmbr0,mtu=1
 
@@ -72,7 +70,7 @@ qm set "$VMID" --scsihw virtio-scsi-pci --virtio0 "$STORAGE:vm-$VMID-disk-1,disc
 qm set "$VMID" --boot order=virtio0
 qm set "$VMID" --scsi1 "$STORAGE:cloudinit"
 
-echo "Настройка Cloud-Init"
+echo -e "${YELLOW}Настройка Cloud-Init...${NC}"
 mkdir -p /var/lib/vz/snippets
 cat << 'EOF' > /var/lib/vz/snippets/debian-docker.yaml
 #cloud-config
@@ -109,10 +107,10 @@ qm set "$VMID" --ciuser "$REAL_USER"
 if [ -n "$SSH_KEY_PATH" ]; then
     qm set "$VMID" --sshkeys "$SSH_KEY_PATH"
 else
-    echo "Внимание: SSH не найден, нужно настроить SSH-доступ вручную"
+    echo -e "${YELLOW}Внимание: SSH не найден, нужно настроить SSH-доступ вручную${NC}"
 fi
 qm set "$VMID" --ipconfig0 ip=dhcp
 qm template "$VMID"
 
 rm -f "$IMAGE"
-echo "Шаблон успешно создан, ID: $VMID"
+echo -e "${GREEN}Шаблон успешно создан, ID: $VMID${NC}"
