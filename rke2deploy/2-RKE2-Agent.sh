@@ -1,5 +1,5 @@
 #!/bin/bash
-# Вызвываем chmod +x 2-RKE2-Agent.sh; из командной строки чтоб сделать файл исполняемым
+# Вызвываем chmod +x rke2deploy/2-RKE2-Agent.sh; из командной строки чтоб сделать файл исполняемым
 set -e # Прекращение выполнения при любой ошибке
 
 # Цвета для вывода
@@ -27,33 +27,29 @@ token=$(<"$HOME/.kube/token") || {
 for newnode in "${ALL_AGENTS[@]}"; do
   # shellcheck disable=SC2087
   ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@$newnode" sudo bash -c "bash -s" <<EOF
-   set -e;
+    set -e;
 
-   timedatectl set-ntp off; timedatectl set-ntp on; echo -e "${GREEN}  Синхронизация времени на узле $newnode выполнена${NC}";
-   curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="agent" sh - || { echo -e "${RED}  Ошибка при установке RKE2 агента, установка прервана${NC}"; exit 1; }
-   echo -e "${GREEN}  RKE2 установлен${NC}";
+    timedatectl set-ntp off; timedatectl set-ntp on; echo -e "${GREEN}  Синхронизация времени на узле $newnode выполнена${NC}";
+    curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="agent" sh - || { echo -e "${RED}  Ошибка при установке RKE2 агента, установка прервана${NC}"; exit 1; }
+    echo -e "${GREEN}  RKE2 установлен${NC}";
 
-   # Записываем токен и адрес сервера в конфигурацию
-   mkdir -p /etc/rancher/rke2;
-   rm -f /etc/rancher/rke2/config.yaml;
-   cat <<EOL | sudo tee "/etc/rancher/rke2/config.yaml" > /dev/null
+    # Записываем токен и адрес сервера в конфигурацию
+    mkdir -p /etc/rancher/rke2;
+    rm -f /etc/rancher/rke2/config.yaml;
+    cat <<EOL | sudo tee "/etc/rancher/rke2/config.yaml" > /dev/null
 server: https://${NODES[server]}:9345
 token: $token
 EOL
-
-   # Ожидаем запуска службы RKE2 и проверяем статус
-   systemctl enable --now rke2-agent.service;
-   sleep 5;
-   if ! systemctl is-active --quiet rke2-agent.service; then echo -e "${RED}  Сервис rke2-agent не запустился, установка прервана${NC}"; exit 1; fi
-   echo -e "${GREEN}  Агент $newnode присоединился к кластеру${NC}"; echo -e "${GREEN}${NC}";
+    #
+    #
+    echo -e "${GREEN}  Запускаем сервис rke2-agent${NC}";
+    systemctl enable --now rke2-agent.service;
+    sleep 5;
+    if ! systemctl is-active --quiet rke2-agent.service; then echo -e "${RED}  Сервис rke2-agent не запустился, установка прервана${NC}"; exit 1; fi
+    echo -e "${GREEN}  Агент $newnode присоединился к кластеру${NC}"; echo -e "${GREEN}${NC}";
 EOF
 done
 
 echo -e "${GREEN}Конфигурация для подключения $HOME/.kube/config${NC}"
-if [ ${#ALL_AGENTS[@]} -eq 1 ]; then
-  echo -e "${GREEN}Агент кластера RKE2 настроен${NC}"
-  echo -e "${GREEN}${NC}"
-else
-  echo -e "${GREEN}Агенты кластера RKE2 настроены${NC}"
-  echo -e "${GREEN}${NC}"
-fi
+echo -e "${GREEN}Кластер RKE2 настроен${NC}"
+echo -e "${GREEN}${NC}"
