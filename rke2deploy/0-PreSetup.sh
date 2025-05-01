@@ -14,10 +14,17 @@ NC='\033[0m'
 USER="poe"
 PASSWORD="MCMega2005!"
 CERT_NAME="id_rsa_rke2m"
+PREFIX_CONFIG="home"
 
 # Машины кластера
-declare -A NODES=([server]="192.168.83.21" [agent_1]="192.168.83.22" [agent_2]="192.168.83.23")
-# declare -A NODES=([server]="192.168.5.21" [agent_1]="192.168.5.22" [agent_2]="192.168.5.23")
+if [[ "$PREFIX_CONFIG" == "home" ]]; then
+  declare -A NODES=([server]="192.168.5.21" [agent_1]="192.168.5.22" [agent_2]="192.168.5.23")
+elif [[ "$PREFIX_CONFIG" == "office" ]]; then
+  declare -A NODES=([server]="192.168.83.21" [agent_1]="192.168.83.22" [agent_2]="192.168.83.23")
+else
+  echo -e "${RED}Неизвестный кластер $PREFIX_CONFIG, установка прервана${NC}"
+  exit 1
+fi
 ALL_CLUSTER_ITEMS=("${NODES[server]}" "${NODES[agent_1]}" "${NODES[agent_2]}")
 
 ####################################################################################################
@@ -25,11 +32,7 @@ echo -e "${GREEN}${NC}"
 echo -e "${GREEN}ЭТАП 0: Подготовка узлов${NC}"
 #
 #
-echo -e "${GREEN}  Удаляем директорию .kube (если существует) и создаем новую${NC}"
-if [ -d "$HOME/.kube" ]; then rm -rf "$HOME/.kube" || {
-  echo -e "${RED}Ошибка удаления $HOME/.kube, установка прервана${NC}"
-  exit 1
-}; fi
+echo -e "${GREEN}  Готовим директорию .kube${NC}"
 mkdir -p "$HOME/.kube" || {
   echo -e "${RED}  Ошибка создания $HOME/.kube, установка прервана${NC}"
   exit 1
@@ -101,15 +104,15 @@ for newnode in "${ALL_CLUSTER_ITEMS[@]}"; do
       if systemctl is-active --quiet ufw; then systemctl disable --now ufw; fi
       apt update -y > /dev/null 2>&1;
       echo -e "${GREEN}    Установка пакетов${NC}";
-      apt install mc nano curl systemd-timesyncd iptables nfs-common open-iscsi -y > /dev/null 2>&1;
+      apt install mc nano curl systemd-timesyncd iptables nfs-common open-iscsi -y >/dev/null 2>&1;
       systemctl start systemd-timesyncd && timedatectl set-ntp off && timedatectl set-ntp on && echo -e "${GREEN}    Синхронизация времени выполнена${NC}";
       apt upgrade -y > /dev/null 2>&1;
       apt autoremove -y > /dev/null 2>&1;
-      poweroff;
+      # poweroff;
 EOF
     echo -e "${GREEN}  Узел подготовлен и выключается, сделайте Backup для отката!${NC}"
   } || {
-    echo -e "${YELLOW}  Ошибка при подготовке узла $newnode, возможно, устройство выключено.${NC}"
+    echo -e "${YELLOW}  Ошибка при подготовке узла $newnode, возможно, устройство выключено${NC}"
   }
   echo -e "${GREEN}${NC}"
 done

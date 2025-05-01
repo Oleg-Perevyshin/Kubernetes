@@ -11,10 +11,17 @@ NC='\033[0m'
 # Имя пользователя и сертификат доступа
 USER="poe"
 CERT_NAME="id_rsa_rke2m"
+PREFIX_CONFIG="home"
 
 # Машины кластера
-declare -A NODES=([server]="192.168.83.21" [agent_1]="192.168.83.22" [agent_2]="192.168.83.23")
-# declare -A NODES=([server]="192.168.5.21" [agent_1]="192.168.5.22" [agent_2]="192.168.5.23")
+if [[ "$PREFIX_CONFIG" == "home" ]]; then
+  declare -A NODES=([server]="192.168.5.21" [agent_1]="192.168.5.22" [agent_2]="192.168.5.23")
+elif [[ "$PREFIX_CONFIG" == "office" ]]; then
+  declare -A NODES=([server]="192.168.83.21" [agent_1]="192.168.83.22" [agent_2]="192.168.83.23")
+else
+  echo -e "${RED}Неизвестный кластер $PREFIX_CONFIG, установка прервана${NC}"
+  exit 1
+fi
 
 ####################################################################################################
 echo -e "${GREEN}${NC}"
@@ -26,29 +33,28 @@ ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
   #
   #
   echo -e "${GREEN}  Проверяем kubectl${NC}"
-  if ! command -v kubectl &>/dev/null; then
-    echo -e "${YELLOW}    kubectl не установлен, выполняется установка${NC}";
-    LATEST_VERSION=\$(curl -L -s https://cdn.dl.k8s.io/release/stable.txt | sed 's/v//');
-    echo -e "${GREEN}    Скачиваем kubectl версии \$LATEST_VERSION${NC}";
-    curl -LO "https://dl.k8s.io/release/v\$LATEST_VERSION/bin/linux/amd64/kubectl" -o "\$HOME_DIR/kubectl" >/dev/null 2>&1 || {
-      echo -e "${RED}  Ошибка скачивания kubectl${NC}"; exit 1;
-    }
-    sudo chown poe:poe "\$HOME_DIR/kubectl"
-    sudo chmod +x "\$HOME_DIR/kubectl"
-    sudo install -m 0755 "\$HOME_DIR/kubectl" /usr/local/bin/kubectl >/dev/null 2>&1 || {
-      echo -e "${RED}  Ошибка установки kubectl${NC}"; exit 1;
-    }
-    echo -e "${GREEN}  kubectl \$LATEST_VERSION установлен${NC}";
+  if command -v kubectl &>/dev/null; then
+    CURRENT_VERSION=\$(kubectl version --client | grep 'Client Version' | awk '{print \$3}' | sed 's/v//')
   else
-    echo -e "${GREEN}  kubectl установлен${NC}";
+    CURRENT_VERSION=""
+    echo -e "${YELLOW}    kubectl не установлен, выполняется установка${NC}"
   fi
+  LATEST_VERSION=\$(curl -L -s https://cdn.dl.k8s.io/release/stable.txt | sed 's/v//')
+  if [ -n "\$CURRENT_VERSION" ]; then
+    if [ "\$CURRENT_VERSION" != "\$LATEST_VERSION" ]; then
+      sudo rm -f /usr/local/bin/kubectl
+      curl -LO "https://dl.k8s.io/release/v\$LATEST_VERSION/bin/linux/amd64/kubectl"
+      sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+    fi
+  else
+    curl -LO "https://dl.k8s.io/release/v\$LATEST_VERSION/bin/linux/amd64/kubectl"
+    sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+  fi
+  echo -e "${GREEN}  kubectl v\$LATEST_VERSION установлен${NC}"
   #
   #
-  echo -e "${GREEN}  Удаляем директорию .kube (если существует) и создаем новую${NC}"
-  if [ -d "\$HOME_DIR/.kube" ]; then
-    rm -rf "\$HOME_DIR/.kube" || { echo -e "${RED}  Ошибка при удалении директории \$HOME_DIR/.kube, установка прервана${NC}"; exit 1; }
-  fi
-  mkdir -p "\$HOME_DIR/.kube" || { echo -e "${RED}  Ошибка при создании директории \$HOME_DIR/.kube, установка прервана${NC}"; exit 1; }
+  echo -e "${GREEN}  Готовим директорию .kube${NC}"
+  mkdir -p "\$HOME_DIR/.kube" || { echo -e "${RED}  Ошибка создания директории \$HOME_DIR/.kube, установка прервана${NC}"; exit 1; }
   #
   #
   echo -e "${GREEN}  Устанавливаем Helm${NC}";
@@ -58,28 +64,15 @@ ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
   #
   #
   echo -e "${GREEN}  Устанавливаем RKE2 сервер${NC}";
-  timedatectl set-ntp off; timedatectl set-ntp on; echo -e "${GREEN}  Синхронизация времени выполнена${NC}";
+  timedatectl set-ntp off; timedatectl set-ntp on; echo -e "${GREEN}    Синхронизация времени выполнена${NC}";
   curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="server" sh - || { echo -e "${RED}  Ошибка при установке RKE2, установка прервана${NC}"; exit 1; }
-  #
-  #
   echo -e "${GREEN}  Запускаем сервис rke2-server${NC}";
   mkdir -p /etc/rancher/rke2;
   systemctl enable --now rke2-server.service;
+  systemctl start rke2-server.service;
   sleep 5;
   if ! systemctl is-active --quiet rke2-server.service; then
     echo -e "${RED}  Сервис rke2-server не запустился, установка прервана${NC}"; exit 1;
-  fi
-  #
-  #
-  echo -e "${GREEN}  Работаем с символической ссылкой на kubectl${NC}";
-  KUBECTL_PATH="\$HOME_DIR/kubectl";
-  if [ -f "\$KUBECTL_PATH" ]; then
-    if [ -e /usr/local/bin/kubectl ]; then
-      sudo rm /usr/local/bin/kubectl; echo -e "${YELLOW}    Старая ссылка удалена${NC}";
-    fi
-    sudo ln -s "\$KUBECTL_PATH" /usr/local/bin/kubectl; echo -e "${GREEN}    Ссылка на kubectl создана${NC}";
-  else
-    echo -e "${RED}  kubectl не найден в домашнем каталоге: \$KUBECTL_PATH, установка прервана${NC}"; exit 1;
   fi
   #
   #
@@ -93,26 +86,26 @@ ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
   #
   #
   echo -e "${GREEN}  Создаем файлы настроек кластера в папке .kube${NC}";
-  CONFIG_FILE="\$HOME_DIR/.kube/config";
-  cat /etc/rancher/rke2/rke2.yaml > "\$HOME_DIR/.kube/rke2.yaml";
-  cat /var/lib/rancher/rke2/server/token > "\$HOME_DIR/.kube/token";
-  sed "s/127.0.0.1/${NODES[server]}/g" "\$HOME_DIR/.kube/rke2.yaml" | sudo tee "\$CONFIG_FILE" >/dev/null;
+  CONFIG_FILE="\$HOME_DIR/.kube/${PREFIX_CONFIG}_config";
+  cat /etc/rancher/rke2/rke2.yaml > "\$HOME_DIR/.kube/${PREFIX_CONFIG}_rke2.yaml";
+  cat /var/lib/rancher/rke2/server/token > "\$HOME_DIR/.kube/${PREFIX_CONFIG}_token";
+  sed "s/127.0.0.1/${NODES[server]}/g" "\$HOME_DIR/.kube/${PREFIX_CONFIG}_rke2.yaml" | sudo tee "\$CONFIG_FILE" >/dev/null;
   chown "\$(id -u):\$(id -g)" "\$CONFIG_FILE";
 EOF
 
 # Копируем токен и конфигурацию на вспомогательную машину управления
-ssh -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" "sudo cat /var/lib/rancher/rke2/server/token" >"$HOME/.kube/token" || {
+ssh -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" "sudo cat /var/lib/rancher/rke2/server/token" >"$HOME/.kube/${PREFIX_CONFIG}_token" || {
   echo -e "${RED}  Ошибка при копировании токена с ${NODES[server]}, установка прервана${NC}"
   exit 1
 }
-ssh -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" "sudo cat /etc/rancher/rke2/rke2.yaml" >"$HOME/.kube/rke2.yaml" || {
+ssh -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" "sudo cat /etc/rancher/rke2/rke2.yaml" >"$HOME/.kube/${PREFIX_CONFIG}_rke2.yaml" || {
   echo -e "${RED}  Ошибка при копировании конфигурации с ${NODES[server]}, установка прервана${NC}"
   exit 1
 }
 
 # Задаем файл конфигурации для kubectl и обновляем конфигурацию (заменяем IP-адрес)
-CONFIG_FILE="$HOME/.kube/config"
-sudo sed "s/127.0.0.1/${NODES[server]}/g" "$HOME/.kube/rke2.yaml" | sudo tee "$CONFIG_FILE" >/dev/null
+CONFIG_FILE="$HOME/.kube/${PREFIX_CONFIG}_config"
+sudo sed "s/127.0.0.1/${NODES[server]}/g" "$HOME/.kube/${PREFIX_CONFIG}_rke2.yaml" | sudo tee "$CONFIG_FILE" >/dev/null
 sudo chown "$(id -u):$(id -g)" "$CONFIG_FILE"
 
 # Устанавливаем переменную окружения KUBECONFIG и добавляем в .bashrc
@@ -122,6 +115,6 @@ if ! grep -q "export KUBECONFIG=" "$HOME/.bashrc"; then
 else
   echo -e "${YELLOW}  Переменная окружения KUBECONFIG уже существует в .bashrc${NC}"
 fi
-
+echo -e "${GREEN}${NC}"
 echo -e "${GREEN}Cервер кластера RKE2 настроен${NC}"
 echo -e "${GREEN}${NC}"
