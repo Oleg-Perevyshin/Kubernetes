@@ -12,7 +12,7 @@ NC='\033[0m'
 # Имя пользователя и сертификат доступа
 USER="poe"
 CERT_NAME="id_rsa_rke2m"
-PREFIX_CONFIG="home"
+PREFIX_CONFIG="office"
 RANCHER_HOST="rancher.${PREFIX_CONFIG}.local"
 RANCHER_PASSWORD="MCMega2005!"
 
@@ -26,7 +26,6 @@ else
   exit 1
 fi
 
-echo -e "${GREEN}${NC}"
 echo -e "${GREEN}ЭТАП 3: Установка Rancher${NC}"
 # shellcheck disable=SC2087
 ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
@@ -55,7 +54,7 @@ ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
     exit 1
   }
   echo -e "${GREEN}  Устанавливаем Cert-Manager${NC}";
-  helm upgrade -i cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace --wait --timeout 180m >/dev/null 2>&1 || {
+  helm upgrade -i cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace --wait --timeout 180m || {
     echo -e "${RED}  Ошибка установке Cert-Manager, установка прервана${NC}"; exit 1;
   }
   #
@@ -66,7 +65,7 @@ ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
     --set hostname="${RANCHER_HOST}" \
     --set bootstrapPassword="${RANCHER_PASSWORD}" \
     --set replicas=1 \
-    --wait --timeout 180m >/dev/null 2>&1 || {
+    --wait --timeout 180m || {
       echo -e "${RED}  Ошибка установке Rancher, установка прервана${NC}"; exit 1;
   }
   #

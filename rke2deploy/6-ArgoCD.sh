@@ -1,5 +1,5 @@
 #!/bin/bash
-# Вызвываем chmod +x 4-Longhorn.sh; из командной строки чтоб сделать файл исполняемым
+# Вызвываем chmod +x 6-ArgoCD.sh; из командной строки чтоб сделать файл исполняемым
 
 # Прекращение выполнения при любой ошибке
 set -e
@@ -13,6 +13,7 @@ NC='\033[0m'
 USER="poe"
 CERT_NAME="id_rsa_rke2m"
 PREFIX_CONFIG="office"
+ARGOCD_HOST="argocd.${PREFIX_CONFIG}.local"
 
 # Машины кластера
 if [[ "$PREFIX_CONFIG" == "home" ]]; then
@@ -25,7 +26,7 @@ else
 fi
 
 ####################################################################################################
-echo -e "${GREEN}ЭТАП 4: Установка Longhorn${NC}"
+echo -e "${GREEN}ЭТАП 5: Установка ArgoCD${NC}"
 # shellcheck disable=SC2087
 ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
   set -e;
@@ -37,18 +38,29 @@ ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
   if ! command -v helm &> /dev/null; then echo -e "${RED}helm не установлен, установка прервана${NC}"; exit 1; fi
   #
   #
-  echo -e "${GREEN}  Добавляем репозитории Longhorn${NC}";
-  helm repo add longhorn https://charts.longhorn.io --force-update >/dev/null 2>&1 || {
-    echo -e "${RED}  Ошибка при добавлении репозитория Longhorn, установка прервана${NC}"; exit 1;
+  echo -e "${GREEN}  Добавляем пространство имен для ArgoCD${NC}";
+  if ! kubectl get namespace argocd >/dev/null 2>&1; then
+    echo -e "${GREEN}  Добавляем пространство имен для ArgoCD${NC}";
+    kubectl create namespace argocd >/dev/null 2>&1 || {
+      echo -e "${RED}  Ошибка создания пространства имен${NC}"
+      exit 1
+    }
+  fi
+  #
+  #
+  echo -e "${GREEN}  Применением ArgoCD install.yaml${NC}";
+  kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml >/dev/null 2>&1 || {
+    echo -e "${RED}  Ошибка применения ArgoCD install.yaml${NC}"
+    exit 1
   }
-  helm repo update >/dev/null 2>&1;
   #
   #
-  echo -e "${GREEN}  Устанавливаем Longhorn${NC}";
-  helm upgrade -i longhorn longhorn/longhorn --namespace longhorn-system --create-namespace --wait --timeout 180m || {
-    echo -e "${RED}  Ошибка при установке Longhorn, установка прервана${NC}"; exit 1;
+  echo -e "${GREEN}  Создаем сервис для доступа к ArgoCD${NC}";
+  kubectl expose service argocd-server --type=NodePort --name=argocd-server --namespace=argocd --port=443 --target-port=443 || {
+    echo -e "${RED}  Ошибка создания сервиса${NC}"
+    exit 1
   }
 EOF
 echo -e "${GREEN}${NC}"
-echo -e "${GREEN}Longhorn установлен${NC}"
+echo -e "${GREEN}ArgoCD установлен${NC}"
 echo -e "${GREEN}${NC}"

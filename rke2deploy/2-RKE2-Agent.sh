@@ -1,5 +1,5 @@
 #!/bin/bash
-# Вызвываем chmod +x rke2deploy/2-RKE2-Agent.sh; из командной строки чтоб сделать файл исполняемым
+# Вызвываем chmod +x 2-RKE2-Agent.sh; из командной строки чтоб сделать файл исполняемым
 set -e # Прекращение выполнения при любой ошибке
 
 # Цвета для вывода
@@ -10,7 +10,7 @@ NC='\033[0m'
 # Имя пользователя и сертификат доступа
 USER="poe"
 CERT_NAME="id_rsa_rke2m"
-PREFIX_CONFIG="home"
+PREFIX_CONFIG="office"
 
 # Машины кластера
 if [[ "$PREFIX_CONFIG" == "home" ]]; then
@@ -24,7 +24,6 @@ fi
 ALL_AGENTS=("${NODES[agent_1]}" "${NODES[agent_2]}")
 
 ####################################################################################################
-echo -e "${GREEN}${NC}"
 echo -e "${GREEN}ЭТАП 2: Настройка агентов${NC}"
 token=$(<"$HOME/.kube/${PREFIX_CONFIG}_token") || {
   echo -e "${RED}  Ошибка при чтении токена из $HOME/.kube/${PREFIX_CONFIG}_token, установка прервана${NC}"

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Вызвываем chmod +x rke2deploy/1-RKE2-Server.sh; из командной строки чтоб сделать файл исполняемым
+# Вызвываем chmod +x 1-RKE2-Server.sh; из командной строки чтоб сделать файл исполняемым
 set -e # Прекращение выполнения при любой ошибке
 
 # Цвета для вывода
@@ -11,7 +11,7 @@ NC='\033[0m'
 # Имя пользователя и сертификат доступа
 USER="poe"
 CERT_NAME="id_rsa_rke2m"
-PREFIX_CONFIG="home"
+PREFIX_CONFIG="office"
 
 # Машины кластера
 if [[ "$PREFIX_CONFIG" == "home" ]]; then
@@ -24,7 +24,6 @@ else
 fi
 
 ####################################################################################################
-echo -e "${GREEN}${NC}"
 echo -e "${GREEN}ЭТАП 1: Настройка сервера${NC}"
 # shellcheck disable=SC2087
 ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF

@@ -14,7 +14,7 @@ NC='\033[0m'
 USER="poe"
 PASSWORD="MCMega2005!"
 CERT_NAME="id_rsa_rke2m"
-PREFIX_CONFIG="home"
+PREFIX_CONFIG="office"
 
 # Машины кластера
 if [[ "$PREFIX_CONFIG" == "home" ]]; then
@@ -28,7 +28,6 @@ fi
 ALL_CLUSTER_ITEMS=("${NODES[server]}" "${NODES[agent_1]}" "${NODES[agent_2]}")
 
 ####################################################################################################
-echo -e "${GREEN}${NC}"
 echo -e "${GREEN}ЭТАП 0: Подготовка узлов${NC}"
 #
 #
