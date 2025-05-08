@@ -1,5 +1,5 @@
 #!/bin/bash
-# Вызвываем chmod +x 4-Longhorn.sh; из командной строки чтоб сделать файл исполняемым
+# Вызвываем chmod +x 7-Grafana.sh; из командной строки чтоб сделать файл исполняемым
 
 # Прекращение выполнения при любой ошибке
 set -e
@@ -14,6 +14,8 @@ NC='\033[0m'
 USER="poe"
 CERT_NAME="id_rsa_rke2m"
 PREFIX_CONFIG="office"
+GRAFANA_HOST="grafana.${PREFIX_CONFIG}.local"
+GRAFANA_PASSWORD="MCMega2005!"
 
 # Машины кластера
 if [[ "$PREFIX_CONFIG" == "home" ]]; then
@@ -26,30 +28,41 @@ else
 fi
 
 ####################################################################################################
-echo -e "${GREEN}ЭТАП 4: Установка Longhorn${NC}"
+echo -e "${GREEN}ЭТАП 7: Установка мониторинга${NC}"
 # shellcheck disable=SC2087
 ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
   set -e;
   export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
-  #
-  #
+
   echo -e "${GREEN}  Проверяем установку kubectl и Helm${NC}";
   if ! command -v kubectl &> /dev/null; then echo -e "${RED}kubectl не установлен, установка прервана${NC}"; exit 1; fi
   if ! command -v helm &> /dev/null; then echo -e "${RED}helm не установлен, установка прервана${NC}"; exit 1; fi
-  #
-  #
-  echo -e "${GREEN}  Добавляем репозитории Longhorn${NC}";
-  helm repo add longhorn https://charts.longhorn.io --force-update >/dev/null 2>&1 || {
-    echo -e "${RED}  Ошибка при добавлении репозитория Longhorn, установка прервана${NC}"; exit 1;
+
+  echo -e "${GREEN}  Добавляем репозиторий Prometheus${NC}";
+  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update || {
+    echo -e "${RED}  Ошибка добавления репозитория Prometheus${NC}"; exit 1;
   }
-  helm repo update >/dev/null 2>&1;
+  helm repo update
   #
   #
-  echo -e "${GREEN}  Устанавливаем Longhorn${NC}";
-  helm upgrade -i longhorn longhorn/longhorn --namespace longhorn-system --create-namespace --wait --timeout 180m || {
-    echo -e "${RED}  Ошибка при установке Longhorn, установка прервана${NC}"; exit 1;
+  echo -e "${GREEN}  Добавляем пространство имен для мониторинга${NC}";
+  if ! kubectl get namespace monitoring >/dev/null 2>&1; then
+    kubectl create namespace monitoring >/dev/null 2>&1 || {
+      echo -e "${RED}  Ошибка создания пространства имен${NC}"
+      exit 1
+    }
+  fi
+  #
+  #
+
+  #
+  #
+  echo -e "${GREEN}  Проверяем установку${NC}";
+  kubectl get ingress -n monitoring || {
+    echo -e "${RED}  Ошибка проверки Ingress${NC}"; exit 1;
   }
+
+  echo -e "${YELLOW}  Логин: admin | Пароль: ${GRAFANA_PASSWORD}${NC}"
 EOF
-echo -e "${GREEN}${NC}"
-echo -e "${GREEN}Longhorn установлен${NC}"
-echo -e "${GREEN}${NC}"
+
+echo -e "${GREEN}Grafana установлен и доступен по адресу: https://${GRAFANA_HOST}${NC}"

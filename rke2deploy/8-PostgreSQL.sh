@@ -1,5 +1,5 @@
 #!/bin/bash
-# Вызвываем chmod +x 7-PostgreSQL.sh; из командной строки чтоб сделать файл исполняемым
+# Вызвываем chmod +x 8-PostgreSQL.sh; из командной строки чтоб сделать файл исполняемым
 
 # Прекращение выполнения при любой ошибке
 set -e
@@ -7,6 +7,7 @@ set -e
 # Цвета для вывода
 RED='\033[0;31m'
 GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
 NC='\033[0m'
 
 # Имя пользователя и сертификат доступа
@@ -74,9 +75,13 @@ EOL
   echo -e "${GREEN}  Устанавливаем Prometheus${NC}";
   helm upgrade -i prometheus-community prometheus-community/kube-prometheus-stack \
     -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/main/docs/src/samples/monitoring/kube-stack-config.yaml \
-    --wait --timeout 180m || {
+    --wait --timeout 180m >/dev/null 2>&1 || {
     echo -e "${RED}  Ошибка при установке Prometheus, установка прервана${NC}"; exit 1;
   }
+  #
+  #
+  echo -e "${GREEN}  Получаем пароль для Grafana${NC}";
+  kubectl --namespace default get secrets prometheus-community-grafana -o jsonpath="{.data.admin-password}" | base64 -d ; echo
 
 EOF
 echo -e "${GREEN}${NC}"
