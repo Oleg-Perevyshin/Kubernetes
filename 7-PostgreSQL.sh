@@ -53,24 +53,24 @@ ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
     exit 1
   fi
   echo -e "${GREEN}  ✓ kubectl и Helm установлены${NC}"
-
-  # Добавление репозиториев
+  #
+  #
   echo -e "${GREEN}[3/8] Добавляем репозитории${NC}"
-  helm repo add cnpg https://cloudnative-pg.github.io/charts --force-update >/dev/null 2>&1 || {
+  helm repo add cnpg https://cloudnative-pg.github.io/charts --force-update >/dev/null || {
     echo -e "${RED}  Ошибка добавления репозитория CloudNativePG${NC}"
     exit 1
   }
-  helm repo add runix https://helm.runix.net >/dev/null 2>&1 || {
+  helm repo add runix https://helm.runix.net >/dev/null || {
     echo -e "${RED}  Ошибка добавления репозитория pgAdmin${NC}"
     exit 1
   }
-  helm repo update >/dev/null 2>&1
+  echo -e "${GREEN}  ✓ Репозитории успешно добавлены${NC}"
 
   # Установка CloudNativePG
   echo -e "${GREEN}[4/8] Устанавливаем CloudNativePG${NC}"
   helm upgrade --install cnpg cnpg/cloudnative-pg \
     --namespace cnpg-system --create-namespace \
-    --wait --timeout 180m >/dev/null 2>&1 || {
+    --wait --timeout 180m >/dev/null || {
     echo -e "${RED}  Ошибка при установке CloudNativePG${NC}"
     exit 1
   }
@@ -153,7 +153,7 @@ EOL
   kubectl wait --namespace cnpg-system \
     --for=condition=Ready \
     --timeout=30m \
-    cluster.postgresql.cnpg.io/postgresql-cluster >/dev/null 2>&1 || {
+    cluster.postgresql.cnpg.io/postgresql-cluster >/dev/null || {
     kubectl describe cluster.postgresql.cnpg.io/postgresql-cluster -n cnpg-system
     echo -e "${RED}  Ошибка при запуске PostgreSQL кластера${NC}"
     exit 1
@@ -176,7 +176,7 @@ EOL
     --set serverDefinitions.servers.postgres.Password="K7cN5n9YdJqXs3zfTCHpBAtWEi9N9VBc" \
     --set serverDefinitions.servers.postgres.MaintenanceDB="pas_cloud" \
     --wait \
-    --timeout 180m >/dev/null 2>&1 || {
+    --timeout 180m >/dev/null || {
     echo -e "${RED}  Ошибка при установке pgAdmin${NC}"
     exit 1
   }

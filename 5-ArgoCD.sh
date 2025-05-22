@@ -57,8 +57,8 @@ ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
   #
   #
   echo -e "${GREEN}[3/9] Добавляем пространство имен${NC}"
-  if ! kubectl get namespace argocd >/dev/null 2>&1; then
-    kubectl create namespace argocd >/dev/null 2>&1 || {
+  if ! kubectl get namespace argocd-system >/dev/null 2>&1; then
+    kubectl create namespace argocd-system >/dev/null || {
       echo -e "${RED}  Ошибка создания пространства имен${NC}"
       exit 1
     }
@@ -67,7 +67,7 @@ ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
   #
   #
   echo -e "${GREEN}[4/9] Применением ArgoCD install.yaml${NC}"
-  kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml >/dev/null 2>&1 || {
+  kubectl apply -n argocd-system -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml >/dev/null || {
     echo -e "${RED}  Ошибка применения ArgoCD install.yaml${NC}"
     exit 1
   }
@@ -75,7 +75,7 @@ ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
   #
   #
   echo -e "${GREEN}[5/9] Ожидаем готовности ArgoCD${NC}"
-  kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd  >/dev/null 2>&1 || {
+  kubectl wait --for=condition=available --timeout=600s deployment/argocd-server -n argocd-system  >/dev/null || {
     echo -e "${RED}  Ошибка запуска ArgoCD${NC}"
     exit 1
   }
@@ -88,7 +88,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: argocd
-  namespace: argocd
+  namespace: argocd-system
   annotations:
     nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
     nginx.ingress.kubernetes.io/ssl-passthrough: "true"
@@ -115,13 +115,13 @@ EOL
     -keyout /tmp/argocd.key \
     -out /tmp/argocd.crt \
     -subj "/CN=${ARGOCD_HOST}" \
-    -addext "subjectAltName=DNS:${ARGOCD_HOST}" >/dev/null 2>&1 || {
+    -addext "subjectAltName=DNS:${ARGOCD_HOST}" >/dev/null || {
     echo -e "${RED}  Ошибка генерации сертификата${NC}"
     exit 1
   }
-  kubectl create secret tls argocd-tls -n argocd \
+  kubectl create secret tls argocd-tls -n argocd-system \
     --key /tmp/argocd.key \
-    --cert /tmp/argocd.crt >/dev/null 2>&1 || {
+    --cert /tmp/argocd.crt >/dev/null || {
     echo -e "${RED}  Ошибка создания TLS-секрета${NC}"
     exit 1
   }
@@ -129,12 +129,12 @@ EOL
   #
   #
   echo -e "${GREEN}[8/9] Обновляем Ingress для использования HTTPS${NC}"
-  kubectl patch ingress argocd -n argocd --type=json -p='[
+  kubectl patch ingress argocd -n argocd-system --type=json -p='[
     {"op": "add", "path": "/spec/tls", "value": [{
       "hosts": ["'"${ARGOCD_HOST}"'"],
       "secretName": "argocd-tls"
     }]}
-  ]'  >/dev/null 2>&1 || {
+  ]'  >/dev/null || {
     echo -e "${RED}  Ошибка обновления Ingress${NC}"
     exit 1
   }
@@ -142,14 +142,14 @@ EOL
   #
   #
   echo -e "${GREEN}[9/9] Проверяем создание Ingress${NC}"
-  kubectl get ingress -n argocd >/dev/null 2>&1 || {
+  kubectl get ingress -n argocd-system >/dev/null || {
     echo -e "${RED}  Ошибка создания Ingress${NC}"
     exit 1
   }
   echo -e "${GREEN}  ✓ Ingress успешно проверен${NC}"
   #
   #
-  echo -e "${YELLOW}  Логин: admin | Пароль: \$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)${NC}"
+  echo -e "${YELLOW}  Логин: admin | Пароль: \$(kubectl -n argocd-system get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)${NC}"
 EOF
 
 echo -e "${GREEN}${NC}"

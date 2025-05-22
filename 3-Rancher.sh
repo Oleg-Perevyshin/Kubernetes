@@ -57,20 +57,19 @@ ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
   #
   #
   echo -e "${GREEN}[3/8] Добавляем репозитории Rancher и Jetstack${NC}"
-  helm repo add rancher-latest https://releases.rancher.com/server-charts/latest --force-update >/dev/null 2>&1 || {
+  helm repo add rancher-latest https://releases.rancher.com/server-charts/latest --force-update >/dev/null || {
     echo -e "${RED}  Ошибка добавления репозитория Rancher, установка прервана${NC}"
     exit 1
   }
-  helm repo add jetstack https://charts.jetstack.io --force-update >/dev/null 2>&1 || {
+  helm repo add jetstack https://charts.jetstack.io --force-update >/dev/null || {
     echo -e "${RED}  Ошибка добавления репозитория Jetstack, установка прервана${NC}"
     exit 1
   }
-  helm repo update >/dev/null 2>&1
-  echo -e "${GREEN}  ✓ Репозитории Rancher и Jetstack добавлены${NC}"
+  echo -e "${GREEN}  ✓ Репозитории добавлены${NC}"
   #
   #
   echo -e "${GREEN}[4/8] Применяем cert-manager.crds.yaml${NC}"
-  kubectl apply -f https://github.com/jetstack/cert-manager/releases/download/v1.17.2/cert-manager.crds.yaml >/dev/null 2>&1 || {
+  kubectl apply -f https://github.com/jetstack/cert-manager/releases/download/v1.17.2/cert-manager.crds.yaml >/dev/null || {
     echo -e "${RED}  Ошибка применения cert-manager.crds.yaml${NC}"
     exit 1
   }
@@ -110,7 +109,7 @@ ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
   echo -e "${GREEN}[7/8] Ожидаем готовности подов Rancher${NC}"
   if ! kubectl -n cattle-system wait --for=condition=available --timeout=5m deployment/rancher >/dev/null 2>&1; then
     echo -e "${RED}  Rancher не готов за отведенное время${NC}"
-    kubectl -n cattle-system get pods >/dev/null 2>&1 || {
+    kubectl -n cattle-system get pods >/dev/null || {
       echo -e "${RED}  Ошибка получения состояния подов${NC}"
     }
     exit 1

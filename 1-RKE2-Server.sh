@@ -72,7 +72,7 @@ ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
   #
   #
   echo -e "${GREEN}[4/11] Устанавливаем Helm${NC}"
-  curl -#L https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash >/dev/null 2>&1 || {
+  curl -#L https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash >/dev/null || {
     echo -e "${RED}  Ошибка установки Helm, установка прервана${NC}"
     exit 1
   }

@@ -58,16 +58,15 @@ ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
   #
   #
   echo -e "${GREEN}[3/] Добавляем репозиторий Prometheus${NC}";
-  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update >/dev/null 2>&1 || {
+  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update >/dev/null || {
     echo -e "${RED}  Ошибка добавления репозитория Prometheus${NC}"; exit 1;
   }
-  helm repo update >/dev/null 2>&1
   echo -e "${GREEN}  ✓ Репозитории добавлен${NC}"
   #
   #
   echo -e "${GREEN}[4/] Добавляем пространство имен${NC}";
   if ! kubectl get namespace monitoring >/dev/null 2>&1; then
-    kubectl create namespace monitoring >/dev/null 2>&1 || {
+    kubectl create namespace monitoring >/dev/null || {
       echo -e "${RED}  Ошибка создания пространства имен${NC}"
       exit 1
     }
@@ -79,7 +78,7 @@ ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@${NODES[server]}" sudo bash <<EOF
   #
   #
   # echo -e "${GREEN}[9/9] Проверяем создание Ingress${NC}"
-  # kubectl get ingress -n monitoring  >/dev/null 2>&1 || {
+  # kubectl get ingress -n monitoring  >/dev/null || {
   #   echo -e "${RED}  Ошибка проверки Ingress${NC}"; exit 1;
   # }
   # echo -e "${GREEN}  ✓ Ingress успешно проверен${NC}"

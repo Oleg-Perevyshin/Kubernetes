@@ -86,10 +86,10 @@ CERT_PATH="$HOME/.ssh/$CERT_NAME"
   exit 1
 }
 for host in "${NODES[@]}"; do
-  sshpass -p "$PASSWORD" ssh-copy-id -o StrictHostKeyChecking=no -i "$CERT_PATH" "$USER@$host" >/dev/null 2>&1 || {
+  sshpass -p "$PASSWORD" ssh-copy-id -o StrictHostKeyChecking=no -i "$CERT_PATH" "$USER@$host" >/dev/null || {
     echo -e "${YELLOW}    Ошибка при передаче ключа на $host, пытаемся повторно${NC}"
-    ssh-keygen -f "$HOME/.ssh/known_hosts" -R "$host" >/dev/null 2>&1 # Удаляем старый ключ
-    sshpass -p "$PASSWORD" ssh-copy-id -o StrictHostKeyChecking=no -i "$CERT_PATH" "$USER@$host" >/dev/null 2>&1 || {
+    ssh-keygen -f "$HOME/.ssh/known_hosts" -R "$host" >/dev/null # Удаляем старый ключ
+    sshpass -p "$PASSWORD" ssh-copy-id -o StrictHostKeyChecking=no -i "$CERT_PATH" "$USER@$host" >/dev/null || {
       echo -e "${RED}  Ошибка при повторной передаче ключа на $host, установка прервана${NC}"
       exit 1
     }
