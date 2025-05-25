@@ -1,13 +1,5 @@
 #!/bin/bash
-
-# Прекращение выполнения при любой ошибке
-set -euo pipefail
-
-# Цвета для вывода
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-NC='\033[0m'
+# Сделать файл исполняемым на машине мастера chmod +x 3-Step.sh;
 
 ####################################
 # РЕДАКТИРОВАТЬ ТОЛЬКО ЭТОТ РАЗДЕЛ #
@@ -22,50 +14,94 @@ declare -A NODES=(
   [a3]="192.168.5.16"
 )
 
-# Имя пользователя, имя файла SSH сертификата и набор адресов
-USER="poe"
-CERT_NAME="id_rsa_master"
-PREFIX_CONFIG="Home"
+# Виртуальный IP адрес
+VIP_INTERFACE="ens18"
+VIP_ADDRESS="192.168.5.20"
+LB_RANGE="192.168.5.21-192.168.5.29"
+#VIP_VERSION=$(curl -sL https://api.github.com/repos/kube-vip/kube-vip/releases | jq -r ".[0].name")
 
-# Виртуальный IP адрес (VIP)
-VIP="192.168.5.20"
+# Имя пользователя, имя файла SSH сертификата и набор адресов
+CERT_NAME="id_rsa_cluster"
+PREFIX_CONFIG="Home"
 
 #############################################
 #             НИЧЕГО НЕ МЕНЯТЬ              #
 #############################################
-echo -e "${GREEN}ЭТАП 3: Настройка агентов${NC}"
+# Прекращение выполнения при любой ошибке
+set -euo pipefail
+
+# Цвета для вывода
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+echo -e "${GREEN}ЭТАП 3: Подготовка агентов RKE2${NC}"
 # ----------------------------------------------------------------------------------------------- #
+echo -e "${GREEN}  Проверяем доступность агентов${NC}"
+for node in "${!NODES[@]}"; do
+  ip="${NODES[$node]}"
+  if [[ $node == a* ]]; then
+    ping -c 1 -W 1 "$ip" >/dev/null || {
+      echo -e "${RED}    ✗ Агент $ip недоступен, установка прервана${NC}"
+      exit 1
+    }
+  fi
+done
+
+echo -e "${GREEN}  Проверяем сертификат${NC}"
+if [ ! -f "/root/.ssh/$CERT_NAME" ]; then
+  echo -e "${RED}  ✗ SSH ключ $CERT_NAME не найден${NC}"
+  exit 1
+fi
+
 echo -e "${GREEN}  Получаем токен доступа${NC}"
-TOKEN=$(<"$HOME/.kube/${PREFIX_CONFIG}_Cluster_Token")
+TOKEN=$(cat "/root/.kube/${PREFIX_CONFIG}_Cluster_Token")
 
 for node in "${!NODES[@]}"; do
   ip="${NODES[$node]}"
   if [[ $node == a* ]]; then
-    # shellcheck disable=SC2087
-    ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@$ip" sudo bash -c "bash -s" <<EOF
-      echo -e "${GREEN}${NC}"
-      echo -e "${GREEN}  Работаем с агентом $ip${NC}"
+    ssh -i "/root/.ssh/$CERT_NAME" "root@$ip" bash -c "bash -s" <<EOF
       set -euo pipefail
-      sudo mkdir -p /etc/rancher/rke2 >/dev/null
-      echo -e "${GREEN}  Создаем конфигурацию RKE2${NC}"
-      cat <<EOL | sudo tee "/etc/rancher/rke2/config.yaml" >/dev/null
+      export DEBIAN_FRONTEND=noninteractive
+      export PATH=$PATH:/usr/local/bin
+
+      echo -e "${GREEN}${NC}"
+      echo -e "${GREEN}  Настраиваем агент $ip${NC}"
+      echo -e "${GREEN}  Устанавливаем и запускаем RKE2, ждите...${NC}"
+      mkdir -p "/etc/rancher/rke2/"
+      cat <<EOL | tee "/etc/rancher/rke2/config.yaml" >/dev/null
 token: $TOKEN
-# server: https://${NODES[s1]}:9345
-server: https://$VIP:9345
+# server: https://${VIP_ADDRESS}:9345
+server: https://${NODES[s1]}:9345
 node-label:
   - worker=true
   - longhorn=true
 EOL
 
-      echo -e "${GREEN}  Устанавливаем и запускаем RKE2, ждите...${NC}"
-      curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="agent" sh - >/dev/null
-      systemctl enable rke2-agent.service >/dev/null
-      systemctl start rke2-agent.service >/dev/null
-      exit
+      curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="agent" sh -s - >/dev/null || {
+        echo -e "${RED}    ✗ Ошибка при установке RKE2, установка прервана${NC}"
+        exit 1
+      }
+      systemctl enable rke2-agent.service
+      systemctl start rke2-agent.service
+      for count in {1..30}; do
+        if systemctl is-active --quiet rke2-agent.service; then
+          break
+        elif [ "\$count" -eq 30 ]; then
+          echo -e "${RED}    ✗ Агент не запустился, установка прервана${NC}"
+          exit 1
+        else
+          sleep 10
+        fi
+      done
+
+      echo -e "${GREEN}  ✓ Агент $ip присоединился к кластеру${NC}"
 EOF
-    echo -e "${GREEN}  Агент присоединился к кластеру${NC}"
   fi
 done
+# ----------------------------------------------------------------------------------------------- #
 
-echo -e "${GREEN}Все агенты настроены${NC}"
+echo -e "${GREEN}${NC}"
+echo -e "${GREEN}Кластер RKE2 настроен${NC}"
 echo -e "${GREEN}${NC}"

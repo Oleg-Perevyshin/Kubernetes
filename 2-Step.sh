@@ -1,13 +1,5 @@
 #!/bin/bash
-
-# Прекращение выполнения при любой ошибке
-set -euo pipefail
-
-# Цвета для вывода
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-NC='\033[0m'
+# Сделать файл исполняемым на машине мастера chmod +x 2-Step.sh;
 
 ####################################
 # РЕДАКТИРОВАТЬ ТОЛЬКО ЭТОТ РАЗДЕЛ #
@@ -22,172 +14,124 @@ declare -A NODES=(
   [a3]="192.168.5.16"
 )
 
-# Все серверы без первого
-SERVERS_WITHOUT_FIRST=("s2" "s3")
+# Виртуальный IP адрес
+VIP_INTERFACE="ens18"
+VIP_ADDRESS="192.168.5.20"
+LB_RANGE="192.168.5.21-192.168.5.29"
+#VIP_VERSION=$(curl -sL https://api.github.com/repos/kube-vip/kube-vip/releases | jq -r ".[0].name")
 
 # Имя пользователя, имя файла SSH сертификата и набор адресов
-USER="poe"
-CERT_NAME="id_rsa_master"
-PASSWORD="MCMega2005!"
+CERT_NAME="id_rsa_cluster"
 PREFIX_CONFIG="Home"
-
-# Виртуальный IP адрес (VIP)
-VIP="192.168.5.20"
-VIP_INTERFACE="ens18"
-
-# Диапазон адресов для Loadbalancer - это установлено на /27 в rke2-cilium-config.yaml (32-63)
-LB_RANGE="192.168.5.32/27"
 
 #############################################
 #             НИЧЕГО НЕ МЕНЯТЬ              #
 #############################################
-echo -e "${GREEN}ЭТАП 2: Настройка остальных серверов${NC}"
+# Прекращение выполнения при любой ошибке
+set -euo pipefail
+
+# Цвета для вывода
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+echo -e "${GREEN}ЭТАП 2: Подготовка остальных серверов RKE2${NC}"
 # ----------------------------------------------------------------------------------------------- #
+echo -e "${GREEN}  Проверяем доступность серверов${NC}"
+for node in "${!NODES[@]}"; do
+  ip="${NODES[$node]}"
+  if [[ $node == s* ]]; then
+    ping -c 1 -W 1 "$ip" >/dev/null || {
+      echo -e "${RED}    ✗ Сервер $ip недоступен, установка прервана${NC}"
+      exit 1
+    }
+  fi
+done
+
+echo -e "${GREEN}  Проверяем сертификат${NC}"
+if [ ! -f "/root/.ssh/$CERT_NAME" ]; then
+  echo -e "${RED}  ✗ SSH ключ $CERT_NAME не найден${NC}"
+  exit 1
+fi
+
 echo -e "${GREEN}  Получаем токен доступа${NC}"
-TOKEN=$(<"$HOME/.kube/${PREFIX_CONFIG}_Cluster_Token")
+TOKEN=$(cat "/root/.kube/${PREFIX_CONFIG}_Cluster_Token")
 
 for node in "${!NODES[@]}"; do
   ip="${NODES[$node]}"
   if [[ $node == s* && $node != s1 ]]; then
-    # shellcheck disable=SC2087
-    ssh -q -t -i "$HOME/.ssh/$CERT_NAME" "$USER@$ip" sudo bash -c "bash -s" <<EOF
+    ssh -i "/root/.ssh/$CERT_NAME" "root@$ip" bash -c "bash -s" <<EOF
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      export PATH=$PATH:/usr/local/bin
+
       echo -e "${GREEN}${NC}"
       echo -e "${GREEN}  Настраиваем сервер $ip${NC}"
-      set -euo pipefail
-      if ip addr show | grep -q "$VIP"; then
-        echo -e "${RED}  ✗ Ошибка: VIP $VIP уже используется${NC}"
-        exit 1
-      fi
-      if ! sudo -n true 2>/dev/null; then
-        echo -e "${RED}  ✗ Ошибка: пользователь $USER не может выполнять sudo без пароля${NC}"
-        exit 1
-      fi
-      sudo mkdir -p "/etc/rancher/rke2" >/dev/null
+      mkdir -p "/etc/rancher/rke2" >/dev/null
+      mkdir -p "/var/lib/rancher/rke2/server/manifests/" >/dev/null
       echo -e "${GREEN}  Создаем конфигурацию RKE2${NC}"
-      cat <<EOL | sudo tee "/etc/rancher/rke2/config.yaml" >/dev/null
-token: $TOKEN
+      cat <<EOL | tee "/etc/rancher/rke2/config.yaml" >/dev/null
+# server: https://${VIP_ADDRESS}:9345
 server: https://${NODES[s1]}:9345
+token: $TOKEN
 tls-san:
-  - ${VIP}
+  - ${VIP_ADDRESS}
   - ${NODES[s1]}
   - ${NODES[s2]}
   - ${NODES[s3]}
-system-default-registry: "docker.io"
-EOL
-
-      echo -e "${GREEN}  Создаем конфигурацию VIP${NC}"
-      sudo mkdir -p /var/lib/rancher/rke2/server/manifests >/dev/null
-      KVVERSION=$(curl -sL https://api.github.com/repos/kube-vip/kube-vip/releases | jq -r ".[0].name" | sed 's/^v//')
-      cat <<EOL | sudo tee "/var/lib/rancher/rke2/server/manifests/kube-vip.yaml" >/dev/null
-apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  creationTimestamp: null
-  name: kube-vip-ds
-  namespace: kube-system
-spec:
-  selector:
-    matchLabels:
-      name: kube-vip-ds
-  template:
-    metadata:
-      creationTimestamp: null
-      labels:
-        name: kube-vip-ds
-    spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: node-role.kubernetes.io/master
-                operator: Exists
-            - matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: Exists
-      containers:
-      - args:
-        - manager
-        env:
-        - name: vip_arp
-          value: "true"
-        - name: port
-          value: "6443"
-        - name: vip_interface
-          value: $VIP_INTERFACE
-        - name: vip_cidr
-          value: "32"
-        - name: cp_enable
-          value: "true"
-        - name: cp_namespace
-          value: kube-system
-        - name: vip_ddns
-          value: "false"
-        - name: svc_enable
-          value: "true"
-        - name: svc_leasename
-          value: plndr-svcs-lock
-        - name: vip_leaderelection
-          value: "true"
-        - name: vip_leasename
-          value: plndr-cp-lock
-        - name: vip_leaseduration
-          value: "5"
-        - name: vip_renewdeadline
-          value: "3"
-        - name: vip_retryperiod
-          value: "1"
-        - name: address
-          value: $VIP
-        - name: prometheus_server
-          value: :2112
-        image: ghcr.io/kube-vip/kube-vip:v\$KVVERSION
-        imagePullPolicy: Always
-        name: kube-vip
-        resources: {}
-        securityContext:
-          capabilities:
-            add:
-            - NET_ADMIN
-            - NET_RAW
-            - SYS_TIME
-      hostNetwork: true
-      serviceAccountName: kube-vip
-      tolerations:
-      - effect: NoSchedule
-        operator: Exists
-      - effect: NoExecute
-        operator: Exists
-  updateStrategy: {}
-status:
-  currentNumberScheduled: 0
-  desiredNumberScheduled: 0
-  numberMisscheduled: 0
-  numberReady: 0
 EOL
 
       echo -e "${GREEN}  Устанавливаем и запускаем RKE2, ждите...${NC}"
-      curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="server" sh - >/dev/null
-      systemctl enable rke2-server.service >/dev/null
-      systemctl start rke2-server.service >/dev/null
-      until [ -f /etc/rancher/rke2/rke2.yaml ]; do sleep 10; done
+      curl -sfL https://get.rke2.io | INSTALL_RKE2_TYPE="server" sh -s - >/dev/null || {
+        echo -e "${RED}    ✗ Ошибка при установке RKE2, установка прервана${NC}"
+        exit 1
+      }
+      systemctl enable rke2-server.service
+      systemctl start rke2-server.service
+      for count in {1..30}; do
+        if [ -f /etc/rancher/rke2/rke2.yaml ]; then
+          break
+        elif [ "\$count" -eq 30 ]; then
+          echo -e "${RED}    ✗ Файл конфигурации не создан, установка прервана${NC}"
+          exit 1
+        else
+          sleep 10
+        fi
+      done
+
+#       cat <<EOL | tee "/var/lib/rancher/rke2/server/manifests/rke2-ingress-nginx-config.yaml" >/dev/null
+# ---
+# apiVersion: helm.cattle.io/v1
+# kind: HelmChartConfig
+# metadata:
+#   name: rke2-ingress-nginx
+#   namespace: kube-system
+# spec:
+#   valuesContent: |-
+#     controller:
+#       metrics:
+#         service:
+#           annotations:
+#             prometheus.io/scrape: "true"
+#             prometheus.io/port: "10254"
+#       config:
+#         use-forwarded-headers: "true"
+#       allowSnippetAnnotations: "true"
+# EOL
 
       echo -e "${GREEN}  Настраиваем окружение${NC}"
-      if ! grep -q "export KUBECONFIG=" "/home/$USER/.bashrc"; then
-        echo 'export KUBECONFIG=/etc/rancher/rke2/rke2.yaml' | sudo tee -a "/home/$USER/.bashrc" >/dev/null
+      if ! grep -q "export KUBECONFIG=" "/root/.bashrc"; then
+        echo 'export KUBECONFIG=/etc/rancher/rke2/rke2.yaml' | tee -a "/root/.bashrc" >/dev/null
       fi
-      if ! grep -q "export PATH=.*rancher/rke2/bin" "/home/$USER/.bashrc"; then
-        echo 'export PATH=\${PATH}:/var/lib/rancher/rke2/bin' | sudo tee -a "/home/$USER/.bashrc" >/dev/null
+      if ! grep -q "export PATH=.*rancher/rke2/bin" "/root/.bashrc"; then
+        echo 'export PATH=\${PATH}:/var/lib/rancher/rke2/bin' | tee -a "/root/.bashrc" >/dev/null
       fi
-      if ! grep -q "alias k=" "/home/$USER/.bashrc"; then
-        echo 'alias k=kubectl' | sudo tee -a "/home/$USER/.bashrc" >/dev/null
-      fi
-      sudo ln -sf /var/lib/rancher/rke2/bin/kubectl /usr/local/bin/kubectl
-      source "/home/$USER/.bashrc" >/dev/null
-      exit
+      ln -sf /var/lib/rancher/rke2/bin/kubectl /usr/local/bin/kubectl
 EOF
   fi
 done
+# ----------------------------------------------------------------------------------------------- #
 
-echo -e "${GREEN}Все серверы настроены${NC}"
+echo -e "${GREEN}Все серверы успешно настроены, перезагрузите узлы${NC}"
 echo -e "${GREEN}${NC}"

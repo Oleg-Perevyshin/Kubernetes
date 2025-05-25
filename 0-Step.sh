@@ -1,13 +1,6 @@
 #!/bin/bash
-# Сделать файл исполняемым на машине мастера chmod +x <file name>
-# Прекращение выполнения при любой ошибке
-set -euo pipefail
-
-# Цвета для вывода
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-NC='\033[0m'
+# Полная настройка мастер-машины кластера
+# Сделать файл исполняемым на машине мастера chmod +x 0-Step.sh;
 
 ####################################
 # РЕДАКТИРОВАТЬ ТОЛЬКО ЭТОТ РАЗДЕЛ #
@@ -23,146 +16,111 @@ declare -A NODES=(
 )
 
 # Имя пользователя, имя файла SSH сертификата и набор адресов
-USER="root"
-CERT_NAME="id_rsa_master"
+CERT_NAME="id_rsa_cluster"
 PASSWORD="MCMega2005!"
+PREFIX_CONFIG="Home"
+
 #############################################
 #             НИЧЕГО НЕ МЕНЯТЬ              #
 #############################################
-echo -e "${GREEN}ЭТАП 0: Подготовка${NC}"
-rm -rf "$HOME/.kube" >/dev/null && mkdir -p "$HOME/.kube" >/dev/null
+# Прекращение выполнения при любой ошибке
+set -euo pipefail
+
+# Цвета для вывода
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+echo -e "${GREEN}ЭТАП 0: Подготовка мастер-узла${NC}"
 # ----------------------------------------------------------------------------------------------- #
-echo -e "${GREEN}  Проверяем файл SSH${NC}"
-SSH_CONFIG="$HOME/.ssh/config"
-[ -f "$SSH_CONFIG" ] || { touch "$SSH_CONFIG" && chmod 600 "$SSH_CONFIG"; }
-if ! grep -q "StrictHostKeyChecking" "$SSH_CONFIG"; then
-  echo "StrictHostKeyChecking no" >>"$SSH_CONFIG"
-fi
+echo -e "${GREEN}  Устанавливаем пакеты${NC}"
+{
+  apt-get update && apt-get upgrade -y
+  systemctl disable --now ufw 2>/dev/null || true
+  apt-get install nano mc curl sshpass jq systemd-timesyncd iptables nfs-common open-iscsi ipset conntrack -y
+  systemctl enable --now systemd-timesyncd && timedatectl set-ntp off && timedatectl set-ntp on
+  sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=1/' /etc/default/grub
+} >/dev/null
 # ----------------------------------------------------------------------------------------------- #
-echo -e "${GREEN}  Синхронизируем время${NC}"
-sudo timedatectl set-ntp off >/dev/null
-sudo timedatectl set-ntp on >/dev/null
+echo -e "${GREEN}  Генерируем ключи для мастер-машины кластера${NC}"
+{
+  mkdir -p /root/.ssh
+  chmod 700 /root/.ssh
+  # Если ключ уже существует - удаляем его и запись в authorized_keys
+  if [ -f "/root/.ssh/${CERT_NAME}" ]; then
+    OLD_PUB_KEY=$(cat "/root/.ssh/${CERT_NAME}.pub")
+    if [ -f "/root/.ssh/authorized_keys" ]; then
+      ESCAPED_KEY=$(echo "$OLD_PUB_KEY" | sed 's/[\/&]/\\&/g')
+      sed -i "/${ESCAPED_KEY}/d" "/root/.ssh/authorized_keys"
+    fi
+    rm -f "/root/.ssh/${CERT_NAME}" "/root/.ssh/${CERT_NAME}.pub"
+  fi
+  ssh-keygen -t rsa -b 4096 -f "/root/.ssh/${CERT_NAME}" -C "cluster" -N ""
+  cat "/root/.ssh/${CERT_NAME}.pub" >> /root/.ssh/authorized_keys
+  chmod 600 /root/.ssh/authorized_keys
+} >/dev/null
 # ----------------------------------------------------------------------------------------------- #
-echo -e "${GREEN}  Проверяем kubectl${NC}"
-CURRENT_KUBE_VERSION="0.0.0"
-if command -v kubectl &>/dev/null; then
+echo -e "${GREEN}  Создаем папку для хранения настроек${NC}"
+{
+  rm -rf "/root/.kube"
+  mkdir -p "/root/.kube"
+  chmod 700 "/root/.kube"
+} >/dev/null
+# ----------------------------------------------------------------------------------------------- #
+echo -e "${GREEN}  Создаем конфигурационный файл SSH клиента${NC}"
+{
+  SSH_CONFIG="/root/.ssh/config"
+  [ -f "$SSH_CONFIG" ] || { touch "$SSH_CONFIG" && chmod 600 "$SSH_CONFIG"; }
+  sed -i '/^Host \*/,/^$/d' "$SSH_CONFIG"
+  echo -e "Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null" >> "$SSH_CONFIG"
+  sed -i '/^$/N;/^\n$/D' "$SSH_CONFIG"
+} >/dev/null
+# ----------------------------------------------------------------------------------------------- #
+echo -e "${GREEN}  Проверяем KUBECTL${NC}"
+{
   CURRENT_KUBE_VERSION=$(kubectl version --client 2>/dev/null | grep 'Client Version' | awk '{print $3}' | sed 's/^v//' || echo "0.0.0")
-fi
-LATEST_KUBE_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt | sed 's/^v//' || echo "0.0.0")
-if [ -z "$CURRENT_KUBE_VERSION" ] || [ "$CURRENT_KUBE_VERSION" != "$LATEST_KUBE_VERSION" ]; then
-  echo -e "${YELLOW}    Устанавливаем kubectl v${LATEST_KUBE_VERSION}${NC}"
-  curl -fsSL "https://dl.k8s.io/release/v${LATEST_KUBE_VERSION}/bin/linux/amd64/kubectl" -o /tmp/kubectl
-  sudo chmod +x /tmp/kubectl
-  sudo mv /tmp/kubectl /usr/local/bin/
-fi
-# ----------------------------------------------------------------------------------------------- #
-echo -e "${GREEN}  Проверяем helm${NC}"
-CURRENT_HELM_VERSION="0.0.0"
-if command -v helm &>/dev/null; then
+  LATEST_KUBE_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt | sed 's/^v//' || echo "0.0.0")
+  if [ "$(printf '%s\n' "$LATEST_KUBE_VERSION" "$CURRENT_KUBE_VERSION" | sort -V | head -n1)" != "$LATEST_KUBE_VERSION" ]; then
+    curl -fsSL "https://dl.k8s.io/release/v${LATEST_KUBE_VERSION}/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl
+    chmod +x /usr/local/bin/kubectl
+    echo -e "${GREEN}    ✓ KUBECTL установлен, версия $LATEST_KUBE_VERSION${NC}"
+  else
+    echo -e "${GREEN}    ✓ KUBECTL установлен, версия $CURRENT_KUBE_VERSION${NC}"
+  fi
+}
+
+echo -e "${GREEN}  Проверяем HELM${NC}"
+{
   CURRENT_HELM_VERSION=$(helm version --client 2>/dev/null | awk -F'"' '/Version:/{print $2}' | sed 's/^v//' || echo "0.0.0")
-fi
-LATEST_HELM_VERSION=$(curl -fsSL https://api.github.com/repos/helm/helm/releases/latest | jq -r '.tag_name' | sed 's/^v//')
-if [ -z "$CURRENT_HELM_VERSION" ] || [ "$CURRENT_HELM_VERSION" != "$LATEST_HELM_VERSION" ]; then
-  echo -e "${YELLOW}    Устанавливаем helm v${LATEST_HELM_VERSION}${NC}"
-  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash >/dev/null
-fi
+  LATEST_HELM_VERSION=$(curl -fsSL https://api.github.com/repos/helm/helm/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+  if [ "$(printf '%s\n' "$LATEST_HELM_VERSION" "$CURRENT_HELM_VERSION" | sort -V | head -n1)" != "$LATEST_HELM_VERSION" ]; then
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    echo -e "${GREEN}    ✓ HELM установлен, версия $LATEST_HELM_VERSION${NC}"
+  else
+    echo -e "${GREEN}    ✓ HELM установлен, версия $CURRENT_HELM_VERSION${NC}"
+  fi
+}
 # ----------------------------------------------------------------------------------------------- #
-echo -e "${GREEN}  Настраиваем окружение${NC}"
-if [ ! -f /etc/profile.d/k8s-tools.sh ] || ! grep -q '/usr/local/bin' /etc/profile.d/k8s-tools.sh; then
-  echo 'export PATH=$PATH:/usr/local/bin' | sudo tee /etc/profile.d/k8s-tools.sh >/dev/null
-  chmod +x /etc/profile.d/k8s-tools.sh
-fi
-# ----------------------------------------------------------------------------------------------- #
-echo -e "${GREEN}  Проверяем доступность узлов кластера${NC}"
+echo -e "${GREEN}  Раздаем публичный ключ на все узлы${NC}"
 for node in "${NODES[@]}"; do
   ping -c 1 -W 1 "$node" >/dev/null || {
     echo -e "${RED}    ✗ Узел $node недоступен, установка прервана${NC}"
     exit 1
   }
-done
-# ----------------------------------------------------------------------------------------------- #
-echo -e "${GREEN}  Работаем с SSH ключами${NC}"
-CERT_PATH="$HOME/.ssh/$CERT_NAME"
-for node in "${!NODES[@]}"; do
-  ip="${NODES[$node]}"
-  ssh-keygen -f "$HOME/.ssh/known_hosts" -R "$ip" &>/dev/null
-  sshpass -p "$PASSWORD" ssh-copy-id -o StrictHostKeyChecking=no -i "$CERT_PATH" "$USER@$ip" &>/dev/null
-  if [[ $node == s* ]]; then
-    scp -i "$CERT_PATH" "$CERT_PATH" "$CERT_PATH.pub" "$USER@$ip:/home/$USER/.ssh/" &>/dev/null
-    ssh -i "$CERT_PATH" "$USER@$ip" "chmod 600 /home/$USER/.ssh/$CERT_NAME && chmod 644 /home/$USER/.ssh/$CERT_NAME.pub" &>/dev/null
+
+  sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no "root@$node" \
+    "echo '$(cat /root/.ssh/id_rsa_cluster.pub)' > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys" 2>/dev/null
+
+  if ! ssh -i "/root/.ssh/id_rsa_cluster" -o BatchMode=yes -o ConnectTimeout=5 "root@$node" exit >/dev/null 2>&1; then
+    echo -e "${RED}    ✗ Ошибка проверки подключения к $node${NC}"
+    exit 1
   fi
 done
+echo -e "${GREEN}    ✓ Ключ успешно передан${NC}"
 # ----------------------------------------------------------------------------------------------- #
-for node in "${!NODES[@]}"; do
-  ip="${NODES[$node]}"
-  # shellcheck disable=SC2087
-  ssh -q -i "$HOME/.ssh/$CERT_NAME" "$USER@$ip" sudo bash <<EOF
-    set -euo pipefail
-    export DEBIAN_FRONTEND=noninteractive
-    export NEEDRESTART_MODE=a
-
-    echo -e "${GREEN}${NC}"
-    echo -e "${GREEN}  Готовим узел $ip${NC}"
-    if systemctl is-active --quiet ufw; then
-      systemctl disable --now ufw
-    fi
-
-    echo -e "${GREEN}  Устанавливаем пакеты${NC}"
-    apt-get update -y >/dev/null
-    apt-get -o DPkg::options::="--force-confdef" \
-            -o DPkg::options::="--force-confold" \
-            install mc nano curl jq systemd-timesyncd iptables nfs-common open-iscsi ipset conntrack -y >/dev/null
-
-    echo -e "${GREEN}  Синхронизируем время${NC}"
-    systemctl start systemd-timesyncd
-    timedatectl set-ntp off >/dev/null
-    timedatectl set-ntp on >/dev/null
-
-    sed -i '/[[:space:]]*swap/s/^\([^#]\)/# \1/' /etc/fstab >/dev/null
-    swapoff -a >/dev/null
-
-    if [[ $node == s* ]]; then
-      echo -e "${GREEN}  Проверяем kubectl${NC}"
-      CURRENT_KUBE_VERSION="0.0.0"
-      if command -v kubectl &>/dev/null; then
-        CURRENT_KUBE_VERSION=\$(kubectl version --client 2>/dev/null | grep 'Client Version' | awk '{print \$3}' | sed 's/^v//' || echo "0.0.0")
-      fi
-      LATEST_KUBE_VERSION=\$(curl -fsSL https://dl.k8s.io/release/stable.txt | sed 's/^v//' || echo "0.0.0")
-      if [ -z "\$CURRENT_KUBE_VERSION" ] || [ "\$CURRENT_KUBE_VERSION" != "\$LATEST_KUBE_VERSION" ]; then
-        echo -e "${YELLOW}    Устанавливаем kubectl v${LATEST_KUBE_VERSION}${NC}"
-        curl -fsSL "https://dl.k8s.io/release/v${LATEST_KUBE_VERSION}/bin/linux/amd64/kubectl" -o /tmp/kubectl
-        sudo chmod +x /tmp/kubectl
-        sudo mv /tmp/kubectl /usr/local/bin/
-      fi
-
-      echo -e "${GREEN}  Проверяем helm${NC}"
-      CURRENT_HELM_VERSION="0.0.0"
-      if command -v helm &>/dev/null; then
-        CURRENT_HELM_VERSION=\$(helm version --client 2>/dev/null | awk -F'"' '/Version:/{print \$2}' | sed 's/^v//' || echo "0.0.0")
-      fi
-      LATEST_HELM_VERSION=\$(curl -fsSL https://api.github.com/repos/helm/helm/releases/latest | jq -r '.tag_name' | sed 's/^v//')
-      if [ -z "\$CURRENT_HELM_VERSION" ] || [ "\$CURRENT_HELM_VERSION" != "\$LATEST_HELM_VERSION" ]; then
-        echo -e "${YELLOW}    Устанавливаем helm v${LATEST_HELM_VERSION}${NC}"
-        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash >/dev/null
-      fi
-    fi
-
-    apt-get --with-new-pkgs upgrade -y >/dev/null
-    apt-get autoremove -y >/dev/null
-EOF
-done
+update-grub >/dev/null 2>&1
+apt-get clean && apt-get autoremove -y >/dev/null
 
 echo -e "${GREEN}Подготовительные работы завершены (рекомендуется выполнить резервное копирование)${NC}"
 echo -e "${GREEN}${NC}"
-
-# echo -e "${GREEN}  Отправляем настройки на серверы${NC}"
-# for node in "${!NODES[@]}"; do
-#   ip="${NODES[$node]}"
-#   if [[ $node == s* ]]; then
-#     if [[ $node == s1 ]]; then
-#       scp -i "$HOME/.ssh/$CERT_NAME" "$HOME/.kube/rke2m_cilium_config.yaml" "$USER@${NODES[s1]}:$HOME/rke2_cilium_config.yaml" >/dev/null
-#     else
-#       scp -i "$HOME/.ssh/$CERT_NAME" "$HOME/.kube/rke2_config.yaml" "$USER@$ip:$HOME/rke2_config.yaml" >/dev/null
-#     fi
-#   fi
-# done
