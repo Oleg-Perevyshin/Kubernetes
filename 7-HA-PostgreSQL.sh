@@ -109,6 +109,7 @@ spec:
       postInitSQL:
         - CREATE DATABASE ${PAS_DB};
         - CREATE USER ${PAS_USER} WITH PASSWORD '${PAS_PASSWORD}';
+        - ALTER USER ${PAS_USER} CREATEDB;
         - GRANT ALL PRIVILEGES ON DATABASE ${PAS_DB} TO ${PAS_USER};
         - ALTER DATABASE ${PAS_DB} OWNER TO ${PAS_USER};
         - GRANT ALL ON SCHEMA public TO ${PAS_USER};
@@ -126,6 +127,8 @@ spec:
       - host all all 127.0.0.1/32 md5
       - local all all md5
     parameters:
+      ssl_min_protocol_version: "TLSv1.2"
+      ssl_max_protocol_version: "TLSv1.3"
       max_connections: "200"
       shared_buffers: "512MB"
       work_mem: "16MB"
@@ -213,6 +216,10 @@ EOF
   echo -e "${GREEN}    URL для подключения из приложения PAS Cloud:${NC}"
   echo -e "${GREEN}      postgresql://${PAS_USER}:${PAS_PASSWORD}@${NODES[vip]}:${POSTGRES_PORT}/${PAS_DB}${NC}"
 POSTGRESQL
+# ----------------------------------------------------------------------------------------------- #
+echo -e "${GREEN}  Получаем файл сертификата базы данных${NC}"
+kubectl -n cnpg-system get secret postgresql-cluster-ca -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+echo -e "${GREEN}  Файл необходимо скопировать в /prisma/ca.crt проекта${NC}"
 # ----------------------------------------------------------------------------------------------- #
 echo -e "${GREEN}${NC}"
 echo -e "${GREEN}База данных PostgreSQL установлена${NC}"
