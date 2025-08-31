@@ -17,6 +17,9 @@ RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m' NC='\033[0m'
 #############################################
 echo -e "${GREEN}ЭТАП 1: Подготовка мастер-узла${NC}"
 # ----------------------------------------------------------------------------------------------- #
+for node_ip in "${ORDERED_NODES[@]}"; do
+  ping -c1 -W1 "$node_ip" &>/dev/null || { echo -e "${RED}    ✗ Узел $node_ip недоступен, установка прервана${NC}"; exit 1; }
+done
 echo -e "${GREEN}  Устанавливаем базовые пакеты${NC}"
 mkdir -p /root/.kube && chmod 700 /root/.kube
 apt-get update -y &>/dev/null
@@ -68,11 +71,11 @@ fi
 # ----------------------------------------------------------------------------------------------- #
 echo -e "${GREEN}  Скачиваем RKE2${NC}"
 RKE2_VERSION=$(curl -s https://api.github.com/repos/rancher/rke2/releases/latest | grep tag_name | cut -d '"' -f 4)
-# RKE2_INSTALLER_URL="https://github.com/rancher/rke2/releases/download/${RKE2_VERSION}/rke2.linux-amd64.tar.gz"
-RKE2_INSTALLER_URL="https://github.com/rancher/rke2/releases/download/v1.32.5%2Brke2r1/rke2.linux-amd64.tar.gz"
+RKE2_VERSION="v1.32.5+rke2r1"
+RKE2_INSTALLER_URL="https://github.com/rancher/rke2/releases/download/${RKE2_VERSION}/rke2.linux-amd64.tar.gz"
 curl -fsSL -o "/root/.kube/rke2.linux-amd64.tar.gz" "$RKE2_INSTALLER_URL"
 
-echo -e "${GREEN}  Передаем публичный ключ и RKE2 на узлы${NC}"
+echo -e "${GREEN}  Передаем публичный ключ и RKE2 (${RKE2_VERSION}) на узлы${NC}"
 for node_ip in "${ORDERED_NODES[@]}"; do
   node_name=""
   for name in "${!NODES[@]}"; do
@@ -87,5 +90,4 @@ done
 
 rm -f "/root/.kube/rke2.linux-amd64.tar.gz"
 apt-get clean && apt-get autoremove -y >/dev/null
-# ----------------------------------------------------------------------------------------------- #
-echo -e "${GREEN}${NC}"; echo -e "${GREEN}Подготовительные работы завершены${NC}"; echo -e "${GREEN}${NC}";
+echo -e "${GREEN}Подготовительные работы завершены${NC}"; echo -e "${GREEN}${NC}";

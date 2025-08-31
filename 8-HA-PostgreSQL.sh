@@ -1,5 +1,6 @@
 #!/bin/bash
 # Сделать файл исполняемым на машине мастера chmod +x 8-HA-PostgreSQL.sh;
+# export KUBECONFIG=/root/.kube/HomeLab_Config.yaml
 
 # Конфигурация кластера
 declare -A NODES=([s1]="192.168.5.31" [vip]="192.168.5.40")
@@ -17,6 +18,23 @@ RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m' NC='\033[0m'
 
 echo -e "${GREEN}ЭТАП 8: Установка база данных PostgreSQL${NC}"
 # ----------------------------------------------------------------------------------------------- #
+echo -e "${YELLOW}  Проверка существующего кластера PostgreSQL${NC}"
+if kubectl get cluster.postgresql.cnpg.io postgresql-cluster -n cnpg-system &>/dev/null; then
+  echo -e "${YELLOW}  Кластер уже существует. Удаляем...${NC}"
+  kubectl delete cluster.postgresql.cnpg.io postgresql-cluster -n cnpg-system
+  sleep 10
+fi
+echo -e "${YELLOW}  Удаляем связанные PVC и PV${NC}"
+kubectl delete pvc -l cnpg.io/cluster=postgresql-cluster -n cnpg-system --wait=true
+for pv in $(kubectl get pv --no-headers | grep postgresql-cluster | awk '{print $1}'); do
+  kubectl delete pv "$pv" --wait=true
+done
+echo -e "${YELLOW}  Удаляем pgAdmin и сервисы${NC}"
+helm uninstall pgadmin -n cnpg-system &>/dev/null || true
+kubectl delete svc pgadmin-loadbalancer -n cnpg-system --ignore-not-found
+kubectl delete svc postgresql-loadbalancer -n cnpg-system --ignore-not-found
+echo -e "${GREEN}  Очистка завершена. Продолжаем установку...${NC}"
+
 ssh -i "${CLUSTER_SSH_KEY}" "root@${NODES[s1]}" bash <<CNPG
   set -euo pipefail
   export PATH=\$PATH:/usr/local/bin
@@ -150,7 +168,7 @@ PGSVC
     --set persistence.storageClass=longhorn \
     --wait --timeout 10m &>/dev/null
 
-  echo -e "${GREEN}  Создаём LoadBalancer для pgAdmin${NC}"
+  echo -e "${GREEN}  Создаём LoadBalancer Service для pgAdmin${NC}"
   kubectl apply -f - <<PGADMIN >/dev/null
 apiVersion: v1
 kind: Service

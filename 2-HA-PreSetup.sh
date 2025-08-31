@@ -13,7 +13,7 @@ set -euo pipefail
 RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m' NC='\033[0m'
 
 #############################################
-echo -e "${GREEN}ЭТАП 2: Подготовка узлов кластера и настройка первого сервера RKE2${NC}"
+echo -e "${GREEN}ЭТАП 2: Предварительная подготовка узлов кластера${NC}"
 # ----------------------------------------------------------------------------------------------- #
 for node_ip in "${ORDERED_NODES[@]}"; do
   ping -c1 -W1 "$node_ip" &>/dev/null || { echo -e "${RED}    ✗ Узел $node_ip недоступен, установка прервана${NC}"; exit 1; }
@@ -27,7 +27,7 @@ for node_ip in "${ORDERED_NODES[@]}"; do
   done
   [[ -z "$node_name" ]] && { echo -e "${RED}  ✗ Не найдено имя для IP ${node_ip}, установка прервана${NC}"; exit 1; }
 
-  echo -e "${GREEN}${NC}"; echo -e "${GREEN}  Подготавливаем узел ${node_ip}${NC}";
+  echo -e "${GREEN}  Подготавливаем узел ${node_ip}${NC}";
   ssh -q -i "$CLUSTER_SSH_KEY" "root@${node_ip}" bash <<PRE_SETUP
     set -euo pipefail
     export PATH=\$PATH:/usr/local/bin
@@ -36,7 +36,7 @@ for node_ip in "${ORDERED_NODES[@]}"; do
     apt-get upgrade -y &>/dev/null
 
     if [[ "$node_name" == "bu" ]]; then
-      echo -e "${GREEN}  Настраиваем Backup-узел${NC}"
+      echo -e "${GREEN}    Настраиваем Backup-узел${NC}"
       apt-get install nano mc nfs-kernel-server systemd-timesyncd -y &>/dev/null
       systemctl enable --now systemd-timesyncd
       timedatectl set-ntp off && timedatectl set-ntp on
@@ -48,20 +48,20 @@ for node_ip in "${ORDERED_NODES[@]}"; do
       exportfs -a
       systemctl restart nfs-kernel-server
     else
-      echo -e "${GREEN}  Устанавливаем базовые пакеты${NC}"
+      echo -e "${GREEN}    Устанавливаем базовые пакеты${NC}"
       apt-get install nano mc git curl jq systemd-timesyncd iptables nfs-common open-iscsi ipset conntrack -y &>/dev/null
       systemctl enable --now systemd-timesyncd
       timedatectl set-ntp off && timedatectl set-ntp on
     fi
 
     if [[ "$node_name" == "s1" ]]; then
-      echo -e "${GREEN}  Устанавливаем Docker${NC}"
+      echo -e "${GREEN}    Устанавливаем Docker${NC}"
       curl -fsSL https://get.docker.com | sh &>/dev/null
       systemctl enable docker.service containerd.service
     fi
 
     if [[ "${node_name}" == s* ]]; then
-      echo -e "${GREEN}  Устанавливаем Helm${NC}"
+      echo -e "${GREEN}    Устанавливаем Helm${NC}"
       CURRENT_HELM_VERSION=\$(helm version --client 2>/dev/null | awk -F'"' '/Version:/{print \$2}' | sed 's/^v//' || echo "0.0.0")
       LATEST_HELM_VERSION=\$(curl -fsSL https://api.github.com/repos/helm/helm/releases/latest | jq -r '.tag_name' | sed 's/^v//')
       if [ "$(printf '%s\n' "\$LATEST_HELM_VERSION" "\$CURRENT_HELM_VERSION" | sort -V | head -n1)" != "\$LATEST_HELM_VERSION" ]; then
@@ -96,4 +96,4 @@ for node_ip in "${ORDERED_NODES[@]}"; do
     sleep 1
   done
 done
-echo -e "${GREEN}Все узлы кластера подготовлены и запущены${NC}"; echo -e "${GREEN}${NC}"
+echo -e "${GREEN}Все узлы кластера подготовлены${NC}"; echo -e "${GREEN}${NC}"

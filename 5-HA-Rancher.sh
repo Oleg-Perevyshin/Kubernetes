@@ -13,7 +13,7 @@ RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m' NC='\033[0m'
 #############################################
 echo -e "${GREEN}ЭТАП 5: Установка Rancher${NC}"
 # ----------------------------------------------------------------------------------------------- #
-ssh -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" bash <<EOF
+ssh -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" bash <<RANCHER
   set -euo pipefail
   export PATH=\$PATH:/usr/local/bin
   command -v helm >/dev/null || { echo -e "${RED}    ✗ helm не найден, установка прервана${NC}"; exit 1; }
@@ -68,7 +68,7 @@ SVC
   kubectl patch ingress rancher -n cattle-system --type=json -p='[
     {"op": "replace", "path": "/spec/rules/0/http/paths/0/backend/service/port/number", "value": 443}
   ]' >/dev/null
-EOF
+RANCHER
 # ----------------------------------------------------------------------------------------------- #
 echo -e "${GREEN}  Локальный доступ: https://${NODES[vip]}:${RANCHER_PORT} (admin | ${RANCHER_PASSWORD})${NC}"
 echo -e "${GREEN}  Внешний доступ:   https://${RANCHER_HOST} (admin | ${RANCHER_PASSWORD})${NC}"

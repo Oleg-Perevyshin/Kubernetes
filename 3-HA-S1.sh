@@ -76,10 +76,28 @@ sed -i -e "s/127.0.0.1/${NODES[vip]}/g" \
 chown "$(id -u):$(id -g)" "/root/.kube/${PREFIX_CONFIG}_Config.yaml"
 
 echo -e "${GREEN}  Ожидаем готовности API-сервера${NC}"
-for i in {1..15}; do
+for i in {1..10}; do
   if curl -sk https://${NODES[vip]}:6443/livez &>/dev/null; then break; fi
   echo -e "${YELLOW}  Сервер ещё не готов, попытка $i...${NC}"
-  [ "$i" -eq 15 ] && echo -e "${RED}  Сервер не запустился, установка прервана${NC}" && exit 1
+  [ "$i" -eq 10 ] && echo -e "${RED}  Сервер не запустился, установка прервана${NC}" && exit 1
+  sleep 10
+done
+
+echo -e "${GREEN}  Проверяем, что rke2-server.service активен на первом сервере${NC}"
+for i in {1..10}; do
+  ssh -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" "systemctl is-active --quiet rke2-server.service" && break
+  echo -e "${YELLOW}  rke2-server.service ещё не активен, попытка $i...${NC}"
+  [ "$i" -eq 10 ] && echo -e "${RED}  rke2-server.service не запустился, установка прервана${NC}" && exit 1
+  sleep 5
+done
+
+echo -e "${GREEN}  Проверяем, что узел зарегистрирован и в состоянии Ready${NC}"
+NODE_NAME=$(ssh -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" "hostname")
+for i in {1..10}; do
+  STATUS=$(ssh -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" "kubectl get node ${NODE_NAME} -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" 2>/dev/null || echo "Unknown")
+  if [[ "${STATUS}" == "True" ]]; then break; fi
+  echo -e "${YELLOW}  Узел ${NODE_NAME} ещё не в состоянии Ready, попытка $i...${NC}"
+  [ "$i" -eq 10 ] && echo -e "${RED}  Узел ${NODE_NAME} не готов, установка прервана${NC}" && exit 1
   sleep 10
 done
 

@@ -25,20 +25,42 @@ done
 [ ! -s "/root/.kube/${PREFIX_CONFIG}_Token" ] && echo -e "${RED}  ✗ Файл токена отсутствует или пустой, установка прервана${NC}" && exit 1
 TOKEN=$(cat "/root/.kube/${PREFIX_CONFIG}_Token")
 
+echo -e "${GREEN}  Проверяем готовность первого сервера RKE2 (${NODES[s1]})${NC}"
+NODE_NAME=$(ssh -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" "hostname")
+for i in {1..30}; do
+  ssh -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" "systemctl is-active --quiet rke2-server.service" && break
+  echo -e "${YELLOW}  rke2-server.service ещё не активен, попытка $i...${NC}"
+  [ "$i" -eq 30 ] && echo -e "${RED}  rke2-server.service не запустился, установка прервана${NC}" && exit 1
+  sleep 5
+done
+for i in {1..30}; do
+  STATUS=$(ssh -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" "kubectl get node ${NODE_NAME} -o jsonpath='{.status.conditions[?(@.type==\"Ready\")].status}'" 2>/dev/null || echo "Unknown")
+  if [[ "${STATUS}" == "True" ]]; then break; fi
+  echo -e "${YELLOW}  Узел ${NODE_NAME} ещё не в состоянии Ready, попытка $i...${NC}"
+  [ "$i" -eq 30 ] && echo -e "${RED}  Узел ${NODE_NAME} не готов, установка прервана${NC}" && exit 1
+  sleep 10
+done
+for i in {1..30}; do
+  ssh -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" "curl -sk https://127.0.0.1:9345/livez" &>/dev/null && break
+  echo -e "${YELLOW}  API-сервер ещё не слушает на 9345, попытка $i...${NC}"
+  [ "$i" -eq 30 ] && echo -e "${RED}  API-сервер не готов, установка прервана${NC}" && exit 1
+  sleep 5
+done
+
 for node_ip in "${ORDERED_NODES[@]}"; do
   node_name=""
   for name in "${!NODES[@]}"; do [[ "${NODES[$name]}" == "$node_ip" ]] && node_name="$name" && break; done
   [[ -z "$node_name" ]] && echo -e "${RED}  Не найдено имя для IP ${node_ip}, установка прервана${NC}" && exit 1
 
   if [[ "${node_name}" == s* && "${node_name}" != "s1" && ${TARGET_SEVER} == true ]]; then
-    echo -e "${GREEN}${NC}"; echo -e "${GREEN}  Настраиваем сервер ${node_ip}${NC}";
+    echo -e "${GREEN}  Настраиваем сервер ${node_ip}${NC}";
     ssh -i "$CLUSTER_SSH_KEY" "root@${node_ip}" bash -c "bash -s" <<SETUP_SERVER
       set -euo pipefail
       export PATH=\$PATH:/usr/local/bin
-
-      echo -e "${GREEN}  Устанавливаем и запускаем RKE2, ждите...${NC}"
-      mkdir -p "/var/lib/rancher/rke2/server/manifests/" >/dev/null
-      install -D -m 600 /dev/null "/etc/rancher/rke2/config.yaml" >/dev/null
+      echo -e "${GREEN}  Устанавливаем и запускаем RKE2${NC}"
+      mkdir -p /root/.kube
+      mkdir -p /etc/rancher/rke2/
+      mkdir -p /var/lib/rancher/rke2/server/manifests/
       cat <<CONFIG > /etc/rancher/rke2/config.yaml
 server: https://${NODES[vip]}:9345
 token: ${TOKEN}
@@ -53,8 +75,9 @@ CONFIG
       systemctl daemon-reload
       systemctl enable --now rke2-server.service
       for i in {1..30}; do
-        [ -f /etc/rancher/rke2/rke2.yaml ] && break
-        [ "\$i" -eq 30 ] && echo -e "${RED}    ✗ Файл конфигурации не создан, установка прервана${NC}" && exit 1
+        systemctl is-active --quiet rke2-server.service && [ -f /etc/rancher/rke2/rke2.yaml ] && break
+        echo -e "${YELLOW}  rke2-server ещё не готов, попытка "\$i"...${NC}"
+        [ "\$i" -eq 30 ] && echo -e "${RED}    ✗ Сервер не запустился, установка прервана${NC}" && exit 1
         sleep 10
       done
       grep -q "export KUBECONFIG=" "/root/.bashrc" ||echo 'export KUBECONFIG=/etc/rancher/rke2/rke2.yaml' >> "/root/.bashrc"
@@ -65,13 +88,15 @@ SETUP_SERVER
   fi
 
   if [[ "${node_name}" == a* && ${TARGET_AGENT} == true ]]; then
-    echo -e "${GREEN}${NC}"; echo -e "${GREEN}  Настраиваем агент ${node_ip}${NC}";
+    echo -e "${GREEN}  Настраиваем агент ${node_ip}${NC}";
     ssh -i "$CLUSTER_SSH_KEY" "root@${node_ip}" bash -c "bash -s" <<SETUP_AGENT
       set -euo pipefail
       export PATH=\$PATH:/usr/local/bin
-
-      echo -e "${GREEN}  Устанавливаем и запускаем RKE2, ждите...${NC}"
-      install -D -m 600 /dev/null "/etc/rancher/rke2/config.yaml" && cat > "/etc/rancher/rke2/config.yaml" <<CONFIG
+      echo -e "${GREEN}  Устанавливаем и запускаем RKE2${NC}"
+      mkdir -p /root/.kube
+      mkdir -p /etc/rancher/rke2/
+      mkdir -p /var/lib/rancher/rke2/server/manifests/
+      cat <<CONFIG > /etc/rancher/rke2/config.yaml
 server: https://${NODES[vip]}:9345
 token: ${TOKEN}
 node-ip: "${node_ip}"
@@ -86,6 +111,7 @@ CONFIG
       systemctl enable --now rke2-agent.service
       for i in {1..30}; do
         systemctl is-active --quiet rke2-agent.service && break
+        echo -e "${YELLOW}  rke2-agent ещё не активен, попытка "\$i"...${NC}"
         [ "\$i" -eq 30 ] && echo -e "${RED}    ✗ Агент не запустился, установка прервана${NC}" && exit 1
         sleep 10
       done
