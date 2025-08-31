@@ -1,0 +1,88 @@
+============================================================================
+# Создаем виртуальные машины в Proxmox (по 1 шт)
+Мастер:	Debian 13, CPU: 1 Core, RAM: 2048 MB, SSD: 10 GB		- машина упревления кластером
+Сервер:	Debian 13, CPU: 4 Core, RAM: 8192 MB, SSD: 50 GB		- сервер
+Агент:	Debian 13, CPU: 2 Core, RAM: 8192 MB, SSD: 150 GB		- рабочий узел
+BackUp:	Debian 13, CPU: 1 Core, RAM: 2048 MB, SSD: 300 GB		- машина Backup для Longhorn
+
+============================================================================
+# Заходим под root из ProxMox, разрешаем sudo пользователю poe и вход root
+{
+  apt update && apt upgrade -y;
+  apt install sudo -y;
+  usermod -aG sudo poe
+  nano /etc/ssh/sshd_config
+  PermitRootLogin yes
+  PubkeyAuthentication yes
+  reboot;
+}
+
+# На рабочем месте генерируем пару ключей RSA 4096 бит
+# WINDOWS
+{
+  ssh-keygen -t rsa -b 4096 -f "$env:USERPROFILE\.ssh\id_rsa_master" -C "master"
+  $pubKey = Get-Content "$env:USERPROFILE\.ssh\id_rsa_master.pub"
+  Add-Content "$env:USERPROFILE\.ssh\authorized_keys" $pubKey
+  icacls "$env:USERPROFILE\.ssh\authorized_keys" /inheritance:r /grant "$($env:USERNAME):(R,W)"
+
+  # Создаем файл config для VSCode для Windows
+  Host Master-Node
+    HostName 192.168.5.30
+    IdentityFile C:\Users\POE\.ssh\id_rsa_master
+    User root
+
+  # Подключаемся через VSCode (установится VS Code Server на Мастер машину)
+
+  # Копируем ключи на Мастер-машину, добавляем в authorized_keys и устанавливаем права
+  ssh root@192.168.5.30 "mkdir -p ~/.ssh && chmod 700 ~/.ssh" ;
+  scp "$env:USERPROFILE\.ssh\id_rsa_master.pub" root@192.168.5.30:~/.ssh/ ;
+  ssh root@192.168.5.30 "cat ~/.ssh/id_rsa_master.pub >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && chmod 644 ~/.ssh/id_rsa_master.pub" ;
+  
+  # Проверяем подключение без ввода пароля
+  ssh -i "$env:USERPROFILE\.ssh\id_rsa_master" root@192.168.5.30
+}
+# MacOS
+{
+  ssh-keygen -t rsa -b 4096 -f /Users/poe/.ssh/id_rsa_master -C "master" -N "" && cat /Users/poe/.ssh/id_rsa_master.pub >> /Users/poe/.ssh/authorized_keys && chmod 600 /Users/poe/.ssh/authorized_keys;
+
+  # Создаем файл config для VSCode для MacOS
+  Host Master-Node
+      HostName 192.168.5.30
+      IdentityFile /Users/poe/.ssh/id_rsa_master
+      User root
+
+  # Подключаемся через VSCode (установится VS Code Server на Мастер машину)
+
+  # Копируем ключи на Мастер-машину, добавляем в authorized_keys и устанавливаем права
+  ssh root@192.168.5.30 "mkdir -p ~/.ssh && chmod 700 ~/.ssh" ;
+  scp ~/.ssh/id_rsa_master.pub root@192.168.5.30:~/.ssh/ ;
+  ssh root@192.168.5.30 " cat ~/.ssh/id_rsa_master.pub >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && chmod 644 ~/.ssh/id_rsa_master.pub";
+
+  # Проверяем подключение без ввода пароля
+  ssh -i /Users/poe/.ssh/id_rsa_master root@192.168.5.30;
+}
+
+============================================================================
+# Подключаемся по SSH (root) и делаем начальные настройки всех машин
+{
+  # На серверах и агентах отключаем фаервол, разрешаем установку для poe без ввода пароля, ускоряем запуск и отключаем раздел SWAP
+  systemctl disable --now ufw && \
+  grep -qxF 'poe ALL=(ALL:ALL) NOPASSWD: ALL' /etc/sudoers || echo 'poe ALL=(ALL:ALL) NOPASSWD: ALL' | tee -a /etc/sudoers >/dev/null && \
+  sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=1/' /etc/default/grub && \
+  sed -i '/[[:space:]]*swap/s/^\([^#]\)/# \1/' /etc/fstab && \
+  swapoff -a && \
+  update-grub && \
+  reboot;
+
+  # На мастер-машине и BackUp отключаем фаервол, разрешаем установку без ввода пароля, ускоряем запуск
+  systemctl disable --now ufw && \
+  grep -qxF 'poe ALL=(ALL:ALL) NOPASSWD: ALL' /etc/sudoers || echo 'poe ALL=(ALL:ALL) NOPASSWD: ALL' | tee -a /etc/sudoers >/dev/null && \
+  sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=1/' /etc/default/grub && \
+  update-grub && \
+  reboot;
+
+  # Чистим систему на всех машинах
+  apt clean && apt autoremove -y && poweroff;
+
+  Делаем снимок для отката!
+}
