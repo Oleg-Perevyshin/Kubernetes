@@ -13,7 +13,7 @@ RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m' NC='\033[0m'
 #############################################
 echo -e "${GREEN}ЭТАП 7: Установка ArgoCD${NC}"
 # ----------------------------------------------------------------------------------------------- #
-ssh -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" bash <<EOF
+ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" bash <<EOF
   set -euo pipefail
   export PATH=\$PATH:/usr/local/bin
 
@@ -75,7 +75,7 @@ SVC
   kubectl -n argocd-system wait --for=condition=available deployment/argocd-server --timeout=1m >/dev/null
 
   INIT_PASS=\$(kubectl -n argocd-system get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
-  echo -e "${GREEN}  Логин: admin | Пароль: \$INIT_PASS${NC}"
+  echo -e "${GREEN}  Логин: admin | Начальный пароль: \$INIT_PASS${NC}"
 EOF
 # ----------------------------------------------------------------------------------------------- #
 echo -e "${GREEN}  Смените пароль на ${ARGOCD_PASSWORD}${NC}"

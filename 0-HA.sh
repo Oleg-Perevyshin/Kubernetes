@@ -1,7 +1,7 @@
 ============================================================================
 # Создаем виртуальные машины в Proxmox (по 1 шт)
 Мастер:	Debian 13, CPU: 1 Core, RAM: 2048 MB, SSD: 10 GB		- машина упревления кластером
-Сервер:	Debian 13, CPU: 4 Core, RAM: 8192 MB, SSD: 50 GB		- сервер
+Сервер:	Debian 13, CPU: 4 Core, RAM: 16384 MB, SSD: 50 GB		- сервер
 Агент:	Debian 13, CPU: 2 Core, RAM: 8192 MB, SSD: 150 GB		- рабочий узел
 BackUp:	Debian 13, CPU: 1 Core, RAM: 2048 MB, SSD: 300 GB		- машина Backup для Longhorn
 

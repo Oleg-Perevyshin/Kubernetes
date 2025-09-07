@@ -16,7 +16,7 @@ RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m' NC='\033[0m'
 #############################################
 echo -e "${GREEN}ЭТАП 6: Установка Longhorn${NC}"
 # ----------------------------------------------------------------------------------------------- #
-ssh -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" bash <<LONGHORN
+ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" bash <<LONGHORN
   set -euo pipefail
   export PATH=\$PATH:/usr/local/bin
 

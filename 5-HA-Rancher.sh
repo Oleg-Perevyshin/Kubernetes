@@ -13,19 +13,19 @@ RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m' NC='\033[0m'
 #############################################
 echo -e "${GREEN}ЭТАП 5: Установка Rancher${NC}"
 # ----------------------------------------------------------------------------------------------- #
-ssh -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" bash <<RANCHER
+ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" bash -c "bash -s" <<RANCHER
+  echo -e "${GREEN}  Устанавливаем cert-manager${NC}"
   set -euo pipefail
   export PATH=\$PATH:/usr/local/bin
+  command -v jq >/dev/null || { echo -e "${RED}    ✗ jq не установлен, установка прервана${NC}"; exit 1; }
   command -v helm >/dev/null || { echo -e "${RED}    ✗ helm не найден, установка прервана${NC}"; exit 1; }
   command -v kubectl >/dev/null || { echo -e "${RED}    ✗ kubectl не найден, установка прервана${NC}"; exit 1; }
-
-  echo -e "${GREEN}  Устанавливаем cert-manager${NC}"
   helm repo add jetstack https://charts.jetstack.io --force-update &>/dev/null
   helm repo update
   CM_VERSION=\$(helm search repo jetstack/cert-manager -o json | jq -r '.[0].version')
   [ -z "\$CM_VERSION" ] && echo -e "${RED}    ✗ Не удалось получить версию cert-manager, установка прервана${NC}" && exit 1
   kubectl apply -f https://github.com/jetstack/cert-manager/releases/download/\$CM_VERSION/cert-manager.crds.yaml &>/dev/null
-  helm upgrade --install cert-manager jetstack/cert-manager \
+  helm upgrade -i cert-manager jetstack/cert-manager \
     --namespace cert-manager --create-namespace \
     --version \$CM_VERSION \
     --wait --timeout 10m &>/dev/null
@@ -41,8 +41,13 @@ ssh -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" bash <<RANCHER
     --set bootstrapPassword="${RANCHER_PASSWORD}" \
     --set replicas=3 \
     --set service.externalPort="${RANCHER_PORT}" \
+    --set ingress.enabled=true \
+    --set service.type=ClusterIP \
+    # --set ingress.tls.source=letsEncrypt \
+    # --set letsEncrypt.email=oleg.perevyshin@gmail.com \
+    # --set letsEncrypt.environment=production \
     --wait --timeout 30m &>/dev/null
-
+       
   echo -e "${GREEN}  Создаём LoadBalancer Service для Rancher${NC}"
   cat <<SVC | kubectl apply -f - &>/dev/null
 apiVersion: v1
@@ -65,11 +70,28 @@ spec:
 SVC
   kubectl -n cattle-system rollout status deploy/rancher --timeout=5m &>/dev/null
   kubectl -n cattle-system wait --for=condition=available deployment/rancher --timeout=2m &>/dev/null
-  kubectl patch ingress rancher -n cattle-system --type=json -p='[
-    {"op": "replace", "path": "/spec/rules/0/http/paths/0/backend/service/port/number", "value": 443}
-  ]' >/dev/null
+
+  echo -e "${GREEN}  Ждём, пока kube-vip пропишет IP в LoadBalancer Service${NC}"
+  for i in {1..30}; do
+    if kubectl -n cattle-system get svc rancher-loadbalancer -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null | grep -qE '^[0-9]'; then
+      break
+    fi
+    sleep 2
+  done
+
+  echo -e "${GREEN}  Настраиваем server-url для внешнего доступа${NC}"
+  kubectl -n cattle-system patch settings.management.cattle.io server-url \
+    --type=merge -p "{\"value\":\"https://${RANCHER_HOST}\"}" &>/dev/null || true
+
+  echo -e "${GREEN}  Перезапускаем Rancher${NC}"
+  kubectl -n cattle-system rollout restart deploy rancher &>/dev/null
+  kubectl -n cattle-system rollout status deploy/rancher --timeout=5m &>/dev/null
 RANCHER
 # ----------------------------------------------------------------------------------------------- #
 echo -e "${GREEN}  Локальный доступ: https://${NODES[vip]}:${RANCHER_PORT} (admin | ${RANCHER_PASSWORD})${NC}"
 echo -e "${GREEN}  Внешний доступ:   https://${RANCHER_HOST} (admin | ${RANCHER_PASSWORD})${NC}"
 echo -e "${GREEN}Rancher установлен${NC}"; echo -e "${GREEN}${NC}";
+
+# Установить Longhorn через Rancher (Cluster => Tools)
+# Через интерфейс Longhorn отредактировать Setting -> Backup Target
+# nfs://192.168.5.39:/mnt/longhorn_backups

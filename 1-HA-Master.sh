@@ -22,8 +22,7 @@ for node_ip in "${ORDERED_NODES[@]}"; do
 done
 echo -e "${GREEN}  Устанавливаем базовые пакеты${NC}"
 mkdir -p /root/.kube && chmod 700 /root/.kube
-apt-get update -y &>/dev/null
-apt-get upgrade -y &>/dev/null
+apt-get update -qq && apt-get upgrade -y -qq
 apt-get install nano mc curl sshpass jq systemd-timesyncd iptables nfs-common open-iscsi ipset conntrack -y &>/dev/null
 systemctl enable --now systemd-timesyncd
 timedatectl set-ntp off && timedatectl set-ntp on
@@ -71,7 +70,7 @@ fi
 # ----------------------------------------------------------------------------------------------- #
 echo -e "${GREEN}  Скачиваем RKE2${NC}"
 RKE2_VERSION=$(curl -s https://api.github.com/repos/rancher/rke2/releases/latest | grep tag_name | cut -d '"' -f 4)
-RKE2_VERSION="v1.32.5+rke2r1"
+# RKE2_VERSION="v1.32.5+rke2r1"
 RKE2_INSTALLER_URL="https://github.com/rancher/rke2/releases/download/${RKE2_VERSION}/rke2.linux-amd64.tar.gz"
 curl -fsSL -o "/root/.kube/rke2.linux-amd64.tar.gz" "$RKE2_INSTALLER_URL"
 
@@ -84,10 +83,10 @@ for node_ip in "${ORDERED_NODES[@]}"; do
   [[ -z "$node_name" ]] && { echo -e "${RED}  ✗ Не найдено имя для IP $node_ip, установка прервана${NC}"; exit 1; }
   ping -c 1 -W 1 "$node_ip" &>/dev/null || { echo -e "${RED}    ✗ Узел ${node_ip} недоступен, установка прервана${NC}"; exit 1; }
   sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no "root@$node_ip" "echo '$(cat ${CLUSTER_SSH_KEY}.pub)' >> /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys" &>/dev/null
-  ssh -i "$CLUSTER_SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 "root@$node_ip" exit &>/dev/null || { echo -e "${RED}    ✗ Ошибка SSH подключения к $node_ip, установка прервана${NC}"; exit 1; }
+  ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$CLUSTER_SSH_KEY" -o BatchMode=yes -o ConnectTimeout=5 "root@$node_ip" exit &>/dev/null || { echo -e "${RED}    ✗ Ошибка SSH подключения к $node_ip, установка прервана${NC}"; exit 1; }
   [[ "$node_name" != "bu" ]] && scp -i "$CLUSTER_SSH_KEY" -o StrictHostKeyChecking=no /root/.kube/rke2.linux-amd64.tar.gz "root@$node_ip:/root/" &>/dev/null
 done
 
 rm -f "/root/.kube/rke2.linux-amd64.tar.gz"
-apt-get clean && apt-get autoremove -y >/dev/null
+apt-get autoremove -y -qq && apt-get clean
 echo -e "${GREEN}Подготовительные работы завершены${NC}"; echo -e "${GREEN}${NC}";

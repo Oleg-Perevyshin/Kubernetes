@@ -28,16 +28,13 @@ for node_ip in "${ORDERED_NODES[@]}"; do
   [[ -z "$node_name" ]] && { echo -e "${RED}  ✗ Не найдено имя для IP ${node_ip}, установка прервана${NC}"; exit 1; }
 
   echo -e "${GREEN}  Подготавливаем узел ${node_ip}${NC}";
-  ssh -q -i "$CLUSTER_SSH_KEY" "root@${node_ip}" bash <<PRE_SETUP
+  ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -q -i "$CLUSTER_SSH_KEY" "root@${node_ip}" bash <<PRE_SETUP
     set -euo pipefail
     export PATH=\$PATH:/usr/local/bin
-
-    apt-get update -y &>/dev/null
-    apt-get upgrade -y &>/dev/null
-
+    apt-get update -qq && apt-get upgrade -y -qq
     if [[ "$node_name" == "bu" ]]; then
       echo -e "${GREEN}    Настраиваем Backup-узел${NC}"
-      apt-get install nano mc nfs-kernel-server systemd-timesyncd -y &>/dev/null
+      apt-get install nano mc nfs-kernel-server systemd-timesyncd -y -qq
       systemctl enable --now systemd-timesyncd
       timedatectl set-ntp off && timedatectl set-ntp on
       mkdir -p /mnt/longhorn_backups
@@ -49,7 +46,7 @@ for node_ip in "${ORDERED_NODES[@]}"; do
       systemctl restart nfs-kernel-server
     else
       echo -e "${GREEN}    Устанавливаем базовые пакеты${NC}"
-      apt-get install nano mc git curl jq systemd-timesyncd iptables nfs-common open-iscsi ipset conntrack -y &>/dev/null
+      apt-get install nano mc git curl jq systemd-timesyncd iptables nfs-common open-iscsi ipset conntrack -y -qq
       systemctl enable --now systemd-timesyncd
       timedatectl set-ntp off && timedatectl set-ntp on
     fi
@@ -74,9 +71,7 @@ for node_ip in "${ORDERED_NODES[@]}"; do
 
     echo 'export PATH=\$PATH:/usr/local/bin' >> /root/.bashrc
     echo 'source /root/.bashrc' >> /root/.profile
-
-    apt-get autoremove -y &>/dev/null
-    apt-get upgrade -y &>/dev/null
+    apt-get autoremove -y -qq && apt-get clean
     echo -e "${GREEN}  Узел подготовлен${NC}"
 PRE_SETUP
 done

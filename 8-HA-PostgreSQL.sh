@@ -18,28 +18,27 @@ RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m' NC='\033[0m'
 
 echo -e "${GREEN}ЭТАП 8: Установка база данных PostgreSQL${NC}"
 # ----------------------------------------------------------------------------------------------- #
-echo -e "${YELLOW}  Проверка существующего кластера PostgreSQL${NC}"
-if kubectl get cluster.postgresql.cnpg.io postgresql-cluster -n cnpg-system &>/dev/null; then
-  echo -e "${YELLOW}  Кластер уже существует. Удаляем...${NC}"
-  kubectl delete cluster.postgresql.cnpg.io postgresql-cluster -n cnpg-system
-  sleep 10
-fi
-echo -e "${YELLOW}  Удаляем связанные PVC и PV${NC}"
-kubectl delete pvc -l cnpg.io/cluster=postgresql-cluster -n cnpg-system --wait=true
-for pv in $(kubectl get pv --no-headers | grep postgresql-cluster | awk '{print $1}'); do
-  kubectl delete pv "$pv" --wait=true
-done
-echo -e "${YELLOW}  Удаляем pgAdmin и сервисы${NC}"
-helm uninstall pgadmin -n cnpg-system &>/dev/null || true
-kubectl delete svc pgadmin-loadbalancer -n cnpg-system --ignore-not-found
-kubectl delete svc postgresql-loadbalancer -n cnpg-system --ignore-not-found
-echo -e "${GREEN}  Очистка завершена. Продолжаем установку...${NC}"
-
-ssh -i "${CLUSTER_SSH_KEY}" "root@${NODES[s1]}" bash <<CNPG
-  set -euo pipefail
-  export PATH=\$PATH:/usr/local/bin
+ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "${CLUSTER_SSH_KEY}" "root@${NODES[s1]}" bash <<CNPG
+  echo -e "${YELLOW}  Проверка существующего кластера PostgreSQL${NC}"
+  if kubectl get cluster.postgresql.cnpg.io postgresql-cluster -n cnpg-system &>/dev/null; then
+    echo -e "${YELLOW}  Кластер уже существует. Удаляем...${NC}"
+    kubectl delete cluster.postgresql.cnpg.io postgresql-cluster -n cnpg-system
+    sleep 10
+  fi
+  echo -e "${YELLOW}  Удаляем связанные PVC и PV${NC}"
+  kubectl delete pvc -l cnpg.io/cluster=postgresql-cluster -n cnpg-system --wait=true
+  for pv in $(kubectl get pv --no-headers | grep postgresql-cluster | awk '{print $1}'); do
+    kubectl delete pv "\$pv" --wait=true
+  done
+  echo -e "${YELLOW}  Удаляем pgAdmin и сервисы${NC}"
+  helm uninstall pgadmin -n cnpg-system &>/dev/null || true
+  kubectl delete svc pgadmin-loadbalancer -n cnpg-system --ignore-not-found
+  kubectl delete svc postgresql-loadbalancer -n cnpg-system --ignore-not-found
+  echo -e "${GREEN}  Очистка завершена. Продолжаем установку...${NC}"
 
   echo -e "${GREEN}  Устанавливаем CloudNativePG${NC}"
+  set -euo pipefail
+  export PATH=\$PATH:/usr/local/bin
   kubectl get storageclass longhorn &>/dev/null || { echo -e "${RED}  Longhorn не найден, установка прервана${NC}"; exit 1; }
   helm repo add cnpg https://cloudnative-pg.github.io/charts --force-update &>/dev/null
   helm repo update
@@ -192,7 +191,7 @@ PGADMIN
   echo -e "${GREEN}  Проверяем состояние pgAdmin${NC}"
   kubectl -n cnpg-system wait --for=condition=Ready pod -l app.kubernetes.io/name=pgadmin4 --timeout=5m &>/dev/null
 
-  echo -e "${GREEN}  Сохраняем сертификат /root/ca.crt (файл необходимо скопировать в /prisma/ca.crt проекта)${NC}"
+  echo -e "${GREEN}  Сохраняем сертификат /root/ca.crt${NC}"
   kubectl -n cnpg-system get secret postgresql-cluster-ca -o jsonpath='{.data.ca\.crt}' | base64 -d > /root/ca.crt
 
   echo -e "${GREEN}  Подключение к PostgreSQL:${NC}"
@@ -202,6 +201,6 @@ PGADMIN
   echo -e "${GREEN}    App URI: postgresql://${CLOUD_USER}:${CLOUD_PASSWORD}@${NODES[vip]}:${POSTGRES_PORT}/${CLOUD_DB}${NC}"
 CNPG
 # ----------------------------------------------------------------------------------------------- #
-echo -e "${GREEN}  Получаем файл сертификата базы данных /root/.kube/ca.crt${NC}"
-ssh -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" "cat /root/ca.crt" > "/root/.kube/ca.crt"
+echo -e "${GREEN}  Получаем файл сертификата базы данных /root/.kube/ca.crt (файл необходимо скопировать в /prisma/ca.crt проекта)${NC}"
+ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$CLUSTER_SSH_KEY" "root@${NODES[s1]}" "cat /root/ca.crt" > "/root/.kube/ca.crt"
 echo -e "${GREEN}База данных PostgreSQL установлена${NC}"; echo -e "${GREEN}${NC}";
