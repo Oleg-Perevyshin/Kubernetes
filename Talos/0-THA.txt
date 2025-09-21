@@ -1,18 +1,24 @@
 ============================================================================
-# Создаем виртуальные машины в Proxmox (по 1 шт)
-Мастер:	Debian 13, CPU: 1 Core, RAM: 2048 MB, SSD: 10 GB		- машина управления кластером
-Сервер:	Talos,     CPU: 4 Core, RAM: 8192 MB, SSD: 50 GB		- сервер
-Агент:	Talos,     CPU: 2 Core, RAM: 4096 MB, SSD: 100 GB		- рабочий узел
-BackUp:	Debian 13, CPU: 1 Core, RAM: 2048 MB, SSD: 300 GB		- машина Backup для Longhorn
+# Создаем виртуальные машины в Proxmox
+# Master:	Debian 13, CPU: 1 Core, RAM: 2048 MB, SSD: 10 GB		- машина управления кластером
+# Server:	Talos,     CPU: 4 Core, RAM: 8192 MB, SSD: 50 GB		- сервер (3 шт.)
+# Worker:	Talos,     CPU: 2 Core, RAM: 4096 MB, SSD: 100 GB		- рабочий узел (3 шт.)
+# BackUp:	Debian 13, CPU: 1 Core, RAM: 2048 MB, SSD: 300 GB		- машина Backup для Longhorn
+#
+# Создаем образ Talos с расширениями
+# siderolabs/amd-ucode
+# siderolabs/iscsi-tools
+# siderolabs/qemu-guest-agent
+# siderolabs/util-linux-tools
 
-============================================================================
-# Заходим под root из ProxMox, разрешаем sudo пользователю poe и вход root
+
+# Заходим под root из Proxmox в Мастер, разрешаем sudo пользователю poe и вход root
 apt update && apt upgrade -y;
 apt install sudo -y;
 usermod -aG sudo poe
 nano /etc/ssh/sshd_config
-PermitRootLogin yes
-PubkeyAuthentication yes
+  PermitRootLogin yes
+  PubkeyAuthentication yes
 reboot;
 
 # На рабочем месте генерируем пару ключей RSA 4096 бит
@@ -61,17 +67,13 @@ reboot;
 }
 
 ============================================================================
-# Подключаемся по SSH (root) и делаем начальные настройки всех машин
-{
-  # На мастер-машине и BackUp отключаем фаервол, разрешаем установку без ввода пароля, ускоряем запуск
-  systemctl disable --now ufw && \
+# Подключаемся по SSH (root) и делаем начальные настройки
+# На мастер-машине и BackUp отключаем фаервол, разрешаем установку без ввода пароля
+systemctl disable --now ufw && \
   grep -qxF 'poe ALL=(ALL:ALL) NOPASSWD: ALL' /etc/sudoers || echo 'poe ALL=(ALL:ALL) NOPASSWD: ALL' | tee -a /etc/sudoers >/dev/null && \
   sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=1/' /etc/default/grub && \
   update-grub && \
   reboot;
 
-  # Чистим систему на всех машинах
-  apt clean && apt autoremove -y && poweroff;
-
-  Делаем снимок для отката!
-}
+# Чистим систему на всех машинах
+apt clean && apt autoremove -y && poweroff;
