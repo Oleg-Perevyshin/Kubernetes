@@ -120,12 +120,12 @@ spec:
       wal_level: "logical"
 PG_CLASTER
 
-echo -e "${GREEN}  Создаем сервис для доступа${NC}"
+echo -e "${GREEN}  Создаем Service${NC}"
 cat <<SERVICE | kubectl apply -f - >/dev/null
 apiVersion: v1
 kind: Service
 metadata:
-  name: postgresql-loadbalancer
+  name: postgresql-lb
   namespace: cnpg-system
   annotations:
     service.beta.kubernetes.io/kube-vip-loadbalancer-ip: "${NODES[vip-service]}"
@@ -150,40 +150,40 @@ if ! kubectl exec -n cnpg-system postgresql-cluster-1 -c postgres -- pg_isready 
   echo -e "${RED}    ✗ Не удалось подключиться к PostgreSQL, установка прервана${NC}"; exit 1;
 fi
 
-echo -e "${GREEN}  Устанавливаем pgAdmin${NC}"
-helm repo add runix https://helm.runix.net --force-update &>/dev/null
-helm repo update &>/dev/null
-helm upgrade -i pgadmin runix/pgadmin4 \
-  --namespace cnpg-system --create-namespace \
-  --set env.email="oleg.perevyshin@gmail.com" \
-  --set env.password="${PG_PASSWORD}" \
-  --set serverDefinitions.enabled=false \
-  --set persistentVolume.enabled=true \
-  --set persistentVolume.size=1Gi \
-  --set persistence.storageClass=longhorn \
-  --wait --timeout 10m &>/dev/null || { echo -e "${RED}    ✗ Ошибка установки pgAdmin${NC}"; exit 1; }
-echo -e "${GREEN}  Создаём Service${NC}"
-cat <<PGADMIN | kubectl apply -f - >/dev/null
-apiVersion: v1
-kind: Service
-metadata:
-  name: pgadmin-lb
-  namespace: cnpg-system
-  annotations:
-    service.beta.kubernetes.io/kube-vip-loadbalancer-ip: "${NODES[vip-service]}"
-spec:
-  type: LoadBalancer
-  loadBalancerIP: "${NODES[vip-service]}"
-  ports:
-    - name: pgadmin
-      port: ${PGADMIN_PORT}
-      targetPort: 80
-      protocol: TCP
-  selector:
-    app.kubernetes.io/name: pgadmin4
-PGADMIN
-echo -e "${GREEN}  Проверяем состояние pgAdmin${NC}"
-kubectl -n cnpg-system wait --for=condition=Ready pod -l app.kubernetes.io/name=pgadmin4 --timeout=5m &>/dev/null
+# echo -e "${GREEN}  Устанавливаем pgAdmin${NC}"
+# helm repo add runix https://helm.runix.net --force-update &>/dev/null
+# helm repo update &>/dev/null
+# helm upgrade -i pgadmin runix/pgadmin4 \
+#   --namespace cnpg-system --create-namespace \
+#   --set env.email="oleg.perevyshin@gmail.com" \
+#   --set env.password="${PG_PASSWORD}" \
+#   --set serverDefinitions.enabled=false \
+#   --set persistentVolume.enabled=true \
+#   --set persistentVolume.size=1Gi \
+#   --set persistence.storageClass=longhorn \
+#   --wait --timeout 10m &>/dev/null || { echo -e "${RED}    ✗ Ошибка установки pgAdmin${NC}"; exit 1; }
+# echo -e "${GREEN}  Создаём Service${NC}"
+# cat <<PGADMIN | kubectl apply -f - >/dev/null
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: pgadmin-lb
+#   namespace: cnpg-system
+#   annotations:
+#     service.beta.kubernetes.io/kube-vip-loadbalancer-ip: "${NODES[vip-service]}"
+# spec:
+#   type: LoadBalancer
+#   loadBalancerIP: "${NODES[vip-service]}"
+#   ports:
+#     - name: pgadmin
+#       port: ${PGADMIN_PORT}
+#       targetPort: 80
+#       protocol: TCP
+#   selector:
+#     app.kubernetes.io/name: pgadmin4
+# PGADMIN
+# echo -e "${GREEN}  Проверяем состояние pgAdmin${NC}"
+# kubectl -n cnpg-system wait --for=condition=Ready pod -l app.kubernetes.io/name=pgadmin4 --timeout=5m &>/dev/null
 
 echo -e "${GREEN}  Получаем файл сертификата базы данных${NC}"
 kubectl -n cnpg-system get secret postgresql-cluster-ca -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
